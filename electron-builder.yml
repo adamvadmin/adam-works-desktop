@@ -1,0 +1,27 @@
+appId: kr.adamv.works.messenger
+productName: V WORKS 메신저
+copyright: Copyright © Adamv
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - build/icons/**/*
+  - package.json
+win:
+  target:
+    - nsis
+  icon: build/icons/icon.png
+  artifactName: VWORKS-Messenger-Setup-${version}.${ext}
+nsis:
+  oneClick: true
+  perMachine: false
+  runAfterFinish: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: V WORKS 메신저
+publish:
+  provider: github
+  owner: adamvadmin
+  repo: adam-works-desktop
+  releaseType: release

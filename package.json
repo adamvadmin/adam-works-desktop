@@ -1,0 +1,27 @@
+{
+  "name": "adam-works-desktop",
+  "productName": "V WORKS 메신저",
+  "version": "0.1.0",
+  "description": "V WORKS 채팅 전용 PC 프로그램 (works.adamv.kr/messenger 원격 로드)",
+  "private": true,
+  "main": "dist/main.js",
+  "author": "Adamv",
+  "scripts": {
+    "build": "tsc -p .",
+    "icons": "node scripts/make-icons.mjs",
+    "start": "npm run icons && npm run build && electron .",
+    "start:local": "npm run icons && npm run build && cross-env ADAM_WORKS_URL=http://localhost:3000/messenger electron .",
+    "dist": "npm run icons && npm run build && electron-builder --win --publish never",
+    "release": "npm run icons && npm run build && electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.10"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "cross-env": "7.0.3",
+    "electron": "44.5.1",
+    "electron-builder": "26.17.0",
+    "typescript": "5.9.3"
+  }
+}
