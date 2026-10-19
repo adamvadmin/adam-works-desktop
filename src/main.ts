@@ -47,8 +47,10 @@ let idle = false;
 // 알림 객체는 닫힐 때까지 참조를 잡아 둔다 (GC되면 클릭 이벤트가 사라진다)
 const activeNotifications = new Set<Notification>();
 
-// 다른 주소(로컬 개발 등)로 띄우면 설치본과 데이터·중복 실행 잠금을 나눠 동시에 실행할 수 있게 한다
-if (process.env.ADAM_WORKS_URL) {
+// 다른 주소(로컬 개발 등)로 띄우면 설치본과 데이터·중복 실행 잠금·앱 ID를 나눈다.
+// 앱 ID가 같으면 개발 실행 때 띄운 Windows 알림을 눌렀을 때 개발용 electron.exe가 앱 없이 켜진다.
+const isDevTarget = Boolean(process.env.ADAM_WORKS_URL);
+if (isDevTarget) {
   app.setPath("userData", `${app.getPath("userData")}-dev`);
 }
 
@@ -57,7 +59,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => showWindow(win));
-  app.setAppUserModelId(APP_USER_MODEL_ID);
+  app.setAppUserModelId(isDevTarget ? `${APP_USER_MODEL_ID}.dev` : APP_USER_MODEL_ID);
   app.whenReady().then(start);
 }
 
