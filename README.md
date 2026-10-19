@@ -5,6 +5,20 @@
 
 설계: `adam-works-be/docs/chat/chat-design.md` §7
 
+## 창 구성 (0.2.0+)
+
+카카오톡처럼 **목록 창과 방 창을 나눈다.** 여러 방을 동시에 띄울 수 있다.
+
+| 창 | 주소 | 동작 |
+|---|---|---|
+| 메인(목록) | `/messenger` | 대화 목록만. 닫으면 트레이로 숨김. 알림·배지를 맡는다 |
+| 방 | `/messenger/rooms/{roomId}` | 방 하나. 목록에서 방을 누르거나 알림을 누르면 열린다. 이미 열려 있으면 앞으로. 닫으면 없어진다 |
+
+- 방 창을 보고 있으면(포커스) 그 방 알림은 띄우지 않고, 보이기만 하면 그 창을 깜빡인다.
+- 방 창 크기는 마지막으로 조절한 크기를 다음 방 창도 쓴다. 새 방 창은 메인 창 옆·이전 방 창 대각선 아래에 연다.
+- 창마다 서버와 실시간 연결이 하나씩 생긴다 (사용자 20명 규모에서 문제없음).
+- 0.1.0 설치본은 `openRoomWindow`가 없어 웹이 예전처럼 한 창 2단으로 보여 준다 (자동 업데이트 후 0.2.0 방식).
+
 ## 구성
 
 | 파일 | 역할 |
@@ -19,12 +33,13 @@
 
 | API | 동작 |
 |---|---|
-| `notify({title, body, roomId})` | Windows 알림. 클릭하면 창을 열고 `onOpenRoom`으로 방 ID 전달 |
+| `notify({title, body, roomId})` | Windows 알림 (메인 창만 요청). 클릭하면 방 창을 연다 |
+| `openRoomWindow(roomId)` | 방 창 열기 (이미 열려 있으면 앞으로) — 0.2.0+ |
 | `setBadge(count)` | 작업표시줄 오버레이(빨간 점)·트레이 아이콘·툴팁 |
 | `flashFrame()` | 창이 포커스가 아닐 때 작업표시줄 깜빡임 |
 | `getVersion()` | 앱 버전 |
 | `onIdleChange(cb)` | 입력 없음 10분·화면 잠금·절전 → `true` (자리비움) |
-| `onOpenRoom(cb)` | 알림 클릭 시 방 ID |
+| `onOpenRoom(cb)` | 알림 클릭 시 방 ID — 0.1.0 호환용 (0.2.0은 방 창을 직접 연다) |
 
 ### 보안
 
@@ -41,7 +56,7 @@ npm start          # 운영 주소(works.adamv.kr/messenger)로 실행
 npm run start:local  # 로컬 웹(localhost:3000/messenger)으로 실행 — adam-works-fe·be를 먼저 띄운다
 ```
 
-다른 주소로 띄우려면 `ADAM_WORKS_URL` 환경변수를 준다.
+다른 주소로 띄우려면 `ADAM_WORKS_URL` 환경변수를 준다. 이때는 사용자 데이터 폴더를 `…-dev`로 따로 써서, 설치본이 실행 중이어도 동시에 띄울 수 있다.
 
 ## 배포
 

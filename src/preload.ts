@@ -12,6 +12,7 @@ const IPC = {
   getVersion: "desktop:get-version",
   idle: "desktop:idle",
   openRoom: "desktop:open-room",
+  openRoomWindow: "desktop:open-room-window",
 } as const;
 
 function subscribe<T>(channel: string, callback: (value: T) => void): () => void {
@@ -32,4 +33,5 @@ contextBridge.exposeInMainWorld("desktop", {
   getVersion: () => ipcRenderer.invoke(IPC.getVersion) as Promise<string>,
   onIdleChange: (callback: (idle: boolean) => void) => subscribe<boolean>(IPC.idle, callback),
   onOpenRoom: (callback: (roomId: number) => void) => subscribe<number>(IPC.openRoom, callback),
+  openRoomWindow: (roomId: number) => ipcRenderer.send(IPC.openRoomWindow, Number(roomId)),
 });

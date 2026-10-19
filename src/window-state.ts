@@ -2,14 +2,20 @@ import { app, screen, type BrowserWindow, type Rectangle } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 
+type Size = { width: number; height: number };
+
 type Settings = {
   bounds?: Rectangle;
   maximized?: boolean;
+  /** 방 창 크기 (마지막으로 조절한 크기를 모든 방 창이 쓴다) */
+  roomSize?: Size;
   /** 닫기 = 트레이로 숨김 안내를 이미 보여 줬는지 */
   trayHintShown?: boolean;
 };
 
-const DEFAULT_SIZE = { width: 1100, height: 760 };
+/** 메인 창은 목록만 보이므로 카카오톡 목록처럼 좁게 시작한다 */
+const DEFAULT_SIZE: Size = { width: 400, height: 720 };
+const DEFAULT_ROOM_SIZE: Size = { width: 440, height: 680 };
 
 function file() {
   return path.join(app.getPath("userData"), "settings.json");
@@ -32,7 +38,7 @@ export function writeSettings(patch: Settings) {
 }
 
 /** 저장된 창 위치가 현재 모니터 안에 있으면 그대로, 아니면 기본 크기 */
-export function initialBounds(): Partial<Rectangle> & { width: number; height: number } {
+export function initialBounds(): Partial<Rectangle> & Size {
   const saved = readSettings().bounds;
   if (!saved) return DEFAULT_SIZE;
   const visible = screen.getAllDisplays().some(({ workArea }) =>
@@ -52,4 +58,16 @@ export function trackWindowState(win: BrowserWindow) {
   win.on("resized", save);
   win.on("moved", save);
   win.on("close", save);
+}
+
+export function roomWindowSize(): Size {
+  return readSettings().roomSize ?? DEFAULT_ROOM_SIZE;
+}
+
+export function trackRoomWindowSize(win: BrowserWindow) {
+  win.on("resized", () => {
+    if (win.isDestroyed() || win.isMaximized() || win.isMinimized()) return;
+    const [width, height] = win.getSize();
+    writeSettings({ roomSize: { width, height } });
+  });
 }

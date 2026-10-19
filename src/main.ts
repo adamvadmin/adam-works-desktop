@@ -8,6 +8,7 @@ import {
   powerMonitor,
   shell,
   Tray,
+  type BrowserWindowConstructorOptions,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
 } from "electron";
@@ -21,12 +22,24 @@ import {
   IDLE_THRESHOLD_SECONDS,
   IPC,
   RELOAD_RETRY_MS,
+  ROOM_WINDOW_CASCADE_PX,
   UPDATE_CHECK_MS,
   iconPath,
+  roomUrl,
 } from "./config";
-import { initialBounds, readSettings, trackWindowState, writeSettings } from "./window-state";
+import {
+  initialBounds,
+  readSettings,
+  roomWindowSize,
+  trackRoomWindowSize,
+  trackWindowState,
+  writeSettings,
+} from "./window-state";
 
+/** 메인 창 = 대화 목록 (닫으면 트레이로 숨김) */
 let win: BrowserWindow | null = null;
+/** 방 전용 창 (roomId → 창). 닫으면 없어진다 */
+const roomWindows = new Map<number, BrowserWindow>();
 let tray: Tray | null = null;
 let quitting = false;
 let unreadCount = 0;
@@ -34,11 +47,16 @@ let idle = false;
 // 알림 객체는 닫힐 때까지 참조를 잡아 둔다 (GC되면 클릭 이벤트가 사라진다)
 const activeNotifications = new Set<Notification>();
 
+// 다른 주소(로컬 개발 등)로 띄우면 설치본과 데이터·중복 실행 잠금을 나눠 동시에 실행할 수 있게 한다
+if (process.env.ADAM_WORKS_URL) {
+  app.setPath("userData", `${app.getPath("userData")}-dev`);
+}
+
 // —— 중복 실행 방지: 두 번째 실행은 기존 창을 띄운다 ——
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => showWindow());
+  app.on("second-instance", () => showWindow(win));
   app.setAppUserModelId(APP_USER_MODEL_ID);
   app.whenReady().then(start);
 }
@@ -57,7 +75,7 @@ function asciiUserAgent() {
 function start() {
   app.userAgentFallback = asciiUserAgent();
   Menu.setApplicationMenu(null);
-  createWindow();
+  createMainWindow();
   createTray();
   registerIpc();
   watchIdle();
@@ -76,17 +94,20 @@ function openExternal(url: string) {
   if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
 }
 
-function createWindow() {
-  const settings = readSettings();
-  win = new BrowserWindow({
-    ...initialBounds(),
-    minWidth: 380,
-    minHeight: 480,
+function allWindows(): BrowserWindow[] {
+  return [win, ...roomWindows.values()].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
+}
+
+/** 메인·방 창 공통: 보안 설정, 외부 링크, 오프라인 재시도, 우클릭 메뉴 */
+function createAppWindow(options: BrowserWindowConstructorOptions, url: string): BrowserWindow {
+  const window = new BrowserWindow({
+    minWidth: 360,
+    minHeight: 420,
     show: false,
-    title: "V WORKS 메신저",
     icon: iconPath("icon.png"),
     backgroundColor: "#f7f8fa",
     autoHideMenuBar: true,
+    ...options,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -97,34 +118,29 @@ function createWindow() {
       plugins: true,
     },
   });
-  if (settings.maximized) win.maximize();
-  trackWindowState(win);
-
-  win.once("ready-to-show", () => {
-    // 자동 실행(로그인 시 시작)은 트레이에만 두고 창은 띄우지 않는다
-    if (!process.argv.includes("--hidden")) win?.show();
-  });
 
   // 허용 출처 밖으로 이동·새 창은 기본 브라우저로
-  win.webContents.on("will-navigate", (event, url) => {
-    if (isAppUrl(url)) return;
+  window.webContents.on("will-navigate", (event, target) => {
+    if (isAppUrl(target)) return;
     event.preventDefault();
-    openExternal(url);
+    openExternal(target);
   });
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (!isAppUrl(url)) openExternal(url);
+  window.webContents.setWindowOpenHandler(({ url: target }) => {
+    if (!isAppUrl(target)) openExternal(target);
     return { action: "deny" };
   });
 
   // 서버에 닿지 않으면 안내 화면을 띄우고 주기적으로 다시 시도
-  win.webContents.on("did-fail-load", (_event, errorCode, _desc, url, isMainFrame) => {
+  window.webContents.on("did-fail-load", (_event, errorCode, _desc, failedUrl, isMainFrame) => {
     if (!isMainFrame || errorCode === -3 /* ABORTED */) return;
-    void win?.loadURL(offlinePage(url));
-    setTimeout(() => void win?.loadURL(APP_URL), RELOAD_RETRY_MS);
+    void window.loadURL(offlinePage(failedUrl));
+    setTimeout(() => {
+      if (!window.isDestroyed()) void window.loadURL(url);
+    }, RELOAD_RETRY_MS);
   });
 
   // 텍스트 선택·입력창 우클릭 메뉴 (Electron은 기본 메뉴가 없다)
-  win.webContents.on("context-menu", (_event, params) => {
+  window.webContents.on("context-menu", (_event, params) => {
     const items: Electron.MenuItemConstructorOptions[] = [];
     if (params.isEditable) {
       items.push({ role: "cut", label: "잘라내기" }, { role: "copy", label: "복사" }, { role: "paste", label: "붙여넣기" });
@@ -135,10 +151,27 @@ function createWindow() {
     if (params.linkURL && /^https?:/i.test(params.linkURL)) {
       items.push({ label: "링크 열기", click: () => openExternal(params.linkURL) });
     }
-    if (items.length > 0) Menu.buildFromTemplate(items).popup();
+    if (items.length > 0) Menu.buildFromTemplate(items).popup({ window });
   });
 
-  win.on("focus", () => win?.flashFrame(false));
+  // 화면을 새로 불러오면 현재 자리비움 상태를 다시 알려 준다
+  window.webContents.on("did-finish-load", () => window.webContents.send(IPC.idle, idle));
+  window.on("focus", () => window.flashFrame(false));
+
+  void window.loadURL(url);
+  return window;
+}
+
+function createMainWindow() {
+  const settings = readSettings();
+  win = createAppWindow({ ...initialBounds(), title: "V WORKS 메신저" }, APP_URL);
+  if (settings.maximized) win.maximize();
+  trackWindowState(win);
+
+  win.once("ready-to-show", () => {
+    // 자동 실행(로그인 시 시작)은 트레이에만 두고 창은 띄우지 않는다
+    if (!process.argv.includes("--hidden")) win?.show();
+  });
 
   // 닫기 = 트레이로 숨김 (종료는 트레이 메뉴)
   win.on("close", (event) => {
@@ -153,8 +186,34 @@ function createWindow() {
       }).show();
     }
   });
+}
 
-  void win.loadURL(APP_URL);
+/** 방 창 열기 (이미 열려 있으면 앞으로) */
+function openRoomWindow(roomId: number) {
+  const existing = roomWindows.get(roomId);
+  if (existing && !existing.isDestroyed()) {
+    showWindow(existing);
+    return;
+  }
+  const size = roomWindowSize();
+  const position = cascadePosition();
+  const room = createAppWindow({ ...size, ...position, title: "V WORKS 메신저" }, roomUrl(roomId));
+  roomWindows.set(roomId, room);
+  trackRoomWindowSize(room);
+  room.once("ready-to-show", () => showWindow(room));
+  room.on("closed", () => roomWindows.delete(roomId));
+}
+
+/** 마지막으로 연 방 창(없으면 메인 창) 옆으로 비켜 놓는다 */
+function cascadePosition(): { x?: number; y?: number } {
+  const last = [...roomWindows.values()].filter((w) => !w.isDestroyed()).pop() ?? win;
+  if (!last || last.isDestroyed() || !last.isVisible()) return {};
+  const [x, y] = last.getPosition();
+  if (last === win) {
+    const [width] = last.getSize();
+    return { x: x + width + 8, y };
+  }
+  return { x: x + ROOM_WINDOW_CASCADE_PX, y: y + ROOM_WINDOW_CASCADE_PX };
 }
 
 function offlinePage(url: string) {
@@ -170,16 +229,16 @@ function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 }
 
-function showWindow() {
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
+function showWindow(window: BrowserWindow | null | undefined) {
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
 }
 
 function createTray() {
   tray = new Tray(nativeImage.createFromPath(iconPath("tray.png")));
-  tray.on("click", showWindow);
+  tray.on("click", () => showWindow(win));
   refreshTray();
 }
 
@@ -190,7 +249,7 @@ function refreshTray() {
   tray.setToolTip(unreadCount > 0 ? `V WORKS 메신저 · 안 읽은 메시지 ${unreadCount}` : "V WORKS 메신저");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "열기", click: showWindow },
+      { label: "열기", click: () => showWindow(win) },
       { type: "separator" },
       {
         label: "Windows 시작 시 자동 실행",
@@ -214,27 +273,37 @@ function refreshTray() {
   );
 }
 
-/** 이 창(허용 출처)에서 온 IPC만 받는다 */
+/** 우리 창(메인·방)이 허용 출처에서 보낸 IPC만 받는다 */
 function fromApp(event: IpcMainEvent | IpcMainInvokeEvent) {
   const url = event.senderFrame?.url ?? "";
-  return event.sender === win?.webContents && isAppUrl(url);
+  return allWindows().some((w) => w.webContents === event.sender) && isAppUrl(url);
+}
+
+function fromMainWindow(event: IpcMainEvent) {
+  return fromApp(event) && event.sender === win?.webContents;
 }
 
 function registerIpc() {
+  // 알림은 메인(목록) 창만 요청한다. 해당 방 창을 보고 있으면 알림 대신 아무것도 하지 않는다
   ipcMain.on(IPC.notify, (event, payload: { title: string; body: string; roomId: number }) => {
-    if (!fromApp(event) || !Notification.isSupported()) return;
+    if (!fromMainWindow(event)) return;
+    const room = roomWindows.get(payload.roomId);
+    if (room && !room.isDestroyed() && room.isVisible() && room.isFocused()) return;
+    if (room && !room.isDestroyed() && room.isVisible()) room.flashFrame(true);
+    else if (win && !win.isFocused()) win.flashFrame(true);
+    if (!Notification.isSupported()) return;
     const notification = new Notification({ title: payload.title, body: payload.body, icon: iconPath("icon.png") });
     activeNotifications.add(notification);
     notification.on("click", () => {
-      showWindow();
-      if (Number.isFinite(payload.roomId)) win?.webContents.send(IPC.openRoom, payload.roomId);
+      if (Number.isFinite(payload.roomId)) openRoomWindow(payload.roomId);
+      else showWindow(win);
     });
     notification.on("close", () => activeNotifications.delete(notification));
     notification.show();
   });
 
   ipcMain.on(IPC.setBadge, (event, count: number) => {
-    if (!fromApp(event) || !win) return;
+    if (!fromMainWindow(event) || !win) return;
     unreadCount = count;
     win.setOverlayIcon(
       count > 0 ? nativeImage.createFromPath(iconPath("overlay.png")) : null,
@@ -244,19 +313,25 @@ function registerIpc() {
   });
 
   ipcMain.on(IPC.flashFrame, (event) => {
-    if (!fromApp(event) || !win || win.isFocused()) return;
-    win.flashFrame(true);
+    if (!fromApp(event)) return;
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window && !window.isFocused()) window.flashFrame(true);
+  });
+
+  ipcMain.on(IPC.openRoomWindow, (event, roomId: number) => {
+    if (!fromApp(event) || !Number.isInteger(roomId) || roomId <= 0) return;
+    openRoomWindow(roomId);
   });
 
   ipcMain.handle(IPC.getVersion, (event) => (fromApp(event) ? app.getVersion() : ""));
 }
 
-/** 입력 없음 10분 또는 화면 잠금이면 자리비움 */
+/** 입력 없음 10분 또는 화면 잠금이면 자리비움 (모든 창에 알린다) */
 function watchIdle() {
   const update = (next: boolean) => {
     if (next === idle) return;
     idle = next;
-    win?.webContents.send(IPC.idle, idle);
+    for (const window of allWindows()) window.webContents.send(IPC.idle, idle);
   };
   const poll = () => update(powerMonitor.getSystemIdleState(IDLE_THRESHOLD_SECONDS) !== "active");
   setInterval(poll, IDLE_POLL_MS);
@@ -264,8 +339,6 @@ function watchIdle() {
   powerMonitor.on("unlock-screen", poll);
   powerMonitor.on("suspend", () => update(true));
   powerMonitor.on("resume", poll);
-  // 화면을 새로 불러오면 현재 상태를 다시 알려 준다
-  win?.webContents.on("did-finish-load", () => win?.webContents.send(IPC.idle, idle));
 }
 
 /** GitHub Releases 자동 업데이트 (설치본에서만) */
