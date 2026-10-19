@@ -192,16 +192,17 @@ function createMainWindow() {
   });
 }
 
-/** 방 창 열기 (이미 열려 있으면 앞으로) */
-function openRoomWindow(roomId: number) {
+/** 방 창 열기 (이미 열려 있으면 앞으로). seq를 주면 그 메시지로 이동 */
+function openRoomWindow(roomId: number, seq?: number) {
   const existing = roomWindows.get(roomId);
   if (existing && !existing.isDestroyed()) {
     showWindow(existing);
+    if (seq != null) existing.webContents.send(IPC.jumpToMessage, seq);
     return;
   }
   const size = roomWindowSize();
   const position = cascadePosition();
-  const room = createAppWindow({ ...size, ...position, title: "V WORKS 메신저" }, roomUrl(roomId));
+  const room = createAppWindow({ ...size, ...position, title: "V WORKS 메신저" }, roomUrl(roomId, seq));
   roomWindows.set(roomId, room);
   trackRoomWindowSize(room);
   room.once("ready-to-show", () => showWindow(room));
@@ -325,9 +326,13 @@ function registerIpc() {
     if (window && !window.isFocused()) window.flashFrame(true);
   });
 
-  ipcMain.on(IPC.openRoomWindow, (event, roomId: number) => {
-    if (!fromApp(event) || !Number.isInteger(roomId) || roomId <= 0) return;
-    openRoomWindow(roomId);
+  // 0.2.x 웹은 방 ID 숫자만, 0.3.0+는 { roomId, seq }를 보낸다
+  ipcMain.on(IPC.openRoomWindow, (event, payload: number | { roomId: number; seq?: number }) => {
+    if (!fromApp(event)) return;
+    const roomId = typeof payload === "number" ? payload : payload?.roomId;
+    const seq = typeof payload === "object" && Number.isInteger(payload?.seq) ? payload.seq : undefined;
+    if (!Number.isInteger(roomId) || roomId <= 0) return;
+    openRoomWindow(roomId, seq != null && seq > 0 ? seq : undefined);
   });
 
   ipcMain.handle(IPC.getVersion, (event) => (fromApp(event) ? app.getVersion() : ""));

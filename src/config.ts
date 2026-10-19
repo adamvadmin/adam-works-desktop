@@ -7,9 +7,10 @@ export const APP_URL = process.env.ADAM_WORKS_URL || "https://works.adamv.kr/mes
 /** 창 안에서 이동을 허용하는 출처 (그 외 링크는 기본 브라우저로 연다) */
 export const APP_ORIGIN = new URL(APP_URL).origin;
 
-/** 방 전용 창 주소 */
-export function roomUrl(roomId: number): string {
-  return `${APP_ORIGIN}/messenger/rooms/${roomId}`;
+/** 방 전용 창 주소 (seq를 주면 그 메시지로 이동) */
+export function roomUrl(roomId: number, seq?: number): string {
+  const base = `${APP_ORIGIN}/messenger/rooms/${roomId}`;
+  return seq != null ? `${base}?seq=${seq}` : base;
 }
 
 export const APP_USER_MODEL_ID = "kr.adamv.works.messenger";
@@ -35,6 +36,7 @@ export const IPC = {
   idle: "desktop:idle",
   openRoom: "desktop:open-room",
   openRoomWindow: "desktop:open-room-window",
+  jumpToMessage: "desktop:jump-to-message",
 } as const;
 
 export function iconPath(name: string): string {
