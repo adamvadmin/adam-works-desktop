@@ -63,7 +63,12 @@ npm run start:local  # 로컬 웹(localhost:3000/messenger)으로 실행 — ada
 1. `package.json`의 `version`을 올리고 커밋
 2. 같은 버전으로 태그 push: `git tag v0.1.1 && git push origin v0.1.1`
 3. GitHub Actions(`release.yml`)가 NSIS 설치 파일을 만들어 Releases에 올린다
-4. 설치된 프로그램은 시작 시·6시간마다 Releases를 확인해 자동 업데이트한다
+4. 설치된 프로그램은 시작 시·1시간마다 Releases를 확인해 새 버전을 내려받는다 (0.2.1+, 0.1.0·0.2.0은 6시간)
+5. 내려받기가 끝나면 Windows 알림("누르면 다시 시작해 적용")과 트레이 메뉴 "업데이트 적용하고 다시 시작"이 나온다. 그냥 두면 트레이에서 **종료**할 때 설치된다 (창 닫기는 트레이로 숨김이라 종료가 아니다)
+
+### 개발 실행 주의
+
+`npm start`·`start:local`로 띄운 개발용 Electron이 Windows 알림을 띄우면 알림 센터·시작 메뉴(`Electron.lnk`)에 흔적이 남는다. `ADAM_WORKS_URL`을 주면 앱 ID를 `…messenger.dev`로 나눠 설치본과 섞이지 않는다 (같은 앱 ID면 작업표시줄 아이콘이 Electron 아이콘으로 보이고, 남은 알림을 누르면 Electron 기본 화면이 켜진다).
 
 로컬에서 설치 파일만 만들려면 `npm run dist` → `release/VWORKS-Messenger-Setup-<버전>.exe`
 

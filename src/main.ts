@@ -44,6 +44,8 @@ let tray: Tray | null = null;
 let quitting = false;
 let unreadCount = 0;
 let idle = false;
+/** 내려받아 둔 업데이트 버전 (다시 시작하면 적용) */
+let readyUpdateVersion: string | null = null;
 // 알림 객체는 닫힐 때까지 참조를 잡아 둔다 (GC되면 클릭 이벤트가 사라진다)
 const activeNotifications = new Set<Notification>();
 
@@ -263,6 +265,9 @@ function refreshTray() {
         },
       },
       { label: `버전 ${app.getVersion()}`, enabled: false },
+      readyUpdateVersion
+        ? { label: `업데이트 적용하고 다시 시작 (${readyUpdateVersion})`, click: installUpdateNow }
+        : { label: "업데이트 확인", enabled: app.isPackaged, click: checkUpdateNow },
       { type: "separator" },
       {
         label: "종료",
@@ -343,12 +348,39 @@ function watchIdle() {
   powerMonitor.on("resume", poll);
 }
 
-/** GitHub Releases 자동 업데이트 (설치본에서만) */
+/**
+ * GitHub Releases 자동 업데이트 (설치본에서만).
+ * 내려받기가 끝나면 알림·트레이 메뉴로 "다시 시작해 적용"을 안내한다.
+ * 그냥 두어도 종료할 때 설치되지만, 창 닫기는 트레이로 숨김이라 종료가 드물다.
+ */
 function checkForUpdates() {
   if (!app.isPackaged) return;
-  const check = () => void autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
-  check();
-  setInterval(check, UPDATE_CHECK_MS);
+  autoUpdater.on("update-downloaded", (info) => {
+    readyUpdateVersion = info.version;
+    refreshTray();
+    const notification = new Notification({
+      title: "V WORKS 메신저 업데이트",
+      body: `새 버전 ${info.version}이 준비됐습니다. 이 알림을 누르면 다시 시작해 적용합니다.`,
+      icon: iconPath("icon.png"),
+    });
+    activeNotifications.add(notification);
+    notification.on("click", installUpdateNow);
+    notification.on("close", () => activeNotifications.delete(notification));
+    notification.show();
+  });
+  checkUpdateNow();
+  setInterval(checkUpdateNow, UPDATE_CHECK_MS);
+}
+
+function checkUpdateNow() {
+  if (!app.isPackaged || readyUpdateVersion) return;
+  void autoUpdater.checkForUpdates().catch(() => undefined);
+}
+
+function installUpdateNow() {
+  if (!readyUpdateVersion) return;
+  quitting = true;
+  autoUpdater.quitAndInstall(true, true);
 }
 
 app.on("before-quit", () => {

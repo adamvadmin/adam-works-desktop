@@ -21,8 +21,8 @@ export const IDLE_POLL_MS = 15_000;
 /** 화면을 못 불러왔을 때 다시 시도 간격 */
 export const RELOAD_RETRY_MS = 5_000;
 
-/** 자동 업데이트 확인 간격 */
-export const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000;
+/** 자동 업데이트 확인 간격 (새 버전을 내려받으면 다시 시작하라고 안내) */
+export const UPDATE_CHECK_MS = 60 * 60 * 1000;
 
 /** 방 창을 연달아 열 때 겹치지 않게 비켜 놓는 간격 */
 export const ROOM_WINDOW_CASCADE_PX = 28;
