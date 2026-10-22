@@ -1,6 +1,7 @@
 /**
  * 아이콘 PNG 생성 (외부 이미지 도구 없이 zlib으로 직접 인코딩)
  * - build/icons/icon.png      256px 앱 아이콘 (설치 파일·작업표시줄)
+ * - build/icons/icon.ico      256·48·32·16px (개발 실행 바로가기 아이콘)
  * - build/icons/tray.png      32px 트레이 아이콘
  * - build/icons/tray-unread.png 32px 트레이 아이콘 + 안 읽음 점
  * - build/icons/overlay.png   32px 작업표시줄 안 읽음 오버레이 (빨간 점)
@@ -127,6 +128,26 @@ function render(size, colorAt) {
   return encodePng(size, rgba);
 }
 
+/** ICO (PNG를 그대로 담는 형식, Windows Vista+) */
+function encodeIco(images) {
+  const header = Buffer.alloc(6 + images.length * 16);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(images.length, 4);
+  let offset = header.length;
+  images.forEach(([size, png], i) => {
+    const entry = 6 + i * 16;
+    header[entry] = size >= 256 ? 0 : size;
+    header[entry + 1] = size >= 256 ? 0 : size;
+    header.writeUInt16LE(1, entry + 4);
+    header.writeUInt16LE(32, entry + 6);
+    header.writeUInt32LE(png.length, entry + 8);
+    header.writeUInt32LE(offset, entry + 12);
+    offset += png.length;
+  });
+  return Buffer.concat([header, ...images.map(([, png]) => png)]);
+}
+
 /** 24비트 BMP (NSIS 설치 화면 그림은 BMP만 받는다). colorAt은 픽셀 좌표를 받아 불투명 색을 돌려준다 */
 function renderBmp(width, height, colorAt) {
   const rowSize = Math.ceil((width * 3) / 4) * 4;
@@ -185,6 +206,7 @@ fs.mkdirSync(INSTALLER_OUT, { recursive: true });
 fs.writeFileSync(path.join(INSTALLER_OUT, "sidebar.bmp"), renderBmp(164, 314, sidebarColor));
 fs.writeFileSync(path.join(INSTALLER_OUT, "header.bmp"), renderBmp(150, 57, withIcon(97, 8, 41, () => WHITE)));
 fs.writeFileSync(path.join(OUT, "icon.png"), render(256, (x, y) => appIconColor(x, y, false)));
+fs.writeFileSync(path.join(OUT, "icon.ico"), encodeIco([256, 48, 32, 16].map((size) => [size, render(size, (x, y) => appIconColor(x, y, false))])));
 fs.writeFileSync(path.join(OUT, "tray.png"), render(32, (x, y) => appIconColor(x, y, false)));
 fs.writeFileSync(path.join(OUT, "tray-unread.png"), render(32, (x, y) => appIconColor(x, y, true)));
 fs.writeFileSync(path.join(OUT, "overlay.png"), render(32, overlayColor));

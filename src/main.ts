@@ -14,6 +14,7 @@ import {
   type IpcMainInvokeEvent,
 } from "electron";
 import { autoUpdater } from "electron-updater";
+import fs from "node:fs";
 import path from "node:path";
 import {
   APP_ORIGIN,
@@ -107,12 +108,39 @@ function asciiUserAgent() {
 function start() {
   app.userAgentFallback = asciiUserAgent();
   Menu.setApplicationMenu(null);
+  if (isDevTarget) ensureDevShortcut();
   if (!startHidden) createSplash();
   createMainWindow();
   createTray();
   registerIpc();
   watchIdle();
   checkForUpdates();
+}
+
+/**
+ * 개발 실행용 시작 메뉴 바로가기. 작업표시줄·알림은 앱 ID가 같은 바로가기의 아이콘을 쓰는데,
+ * 없으면 Electron이 알림을 띄우며 "Electron.lnk"(원자 아이콘)를 만들어 작업표시줄에 그 아이콘이 나온다.
+ */
+function ensureDevShortcut() {
+  if (process.platform !== "win32") return;
+  const programs = path.join(app.getPath("appData"), "Microsoft", "Windows", "Start Menu", "Programs");
+  const link = path.join(programs, `${APP_NAME} (개발).lnk`);
+  try {
+    shell.writeShortcutLink(link, fs.existsSync(link) ? "update" : "create", {
+      target: process.execPath,
+      args: `"${app.getAppPath()}"`,
+      appUserModelId: `${APP_USER_MODEL_ID}.dev`,
+      icon: iconPath("icon.ico"),
+      iconIndex: 0,
+      description: `${APP_NAME} 개발 실행`,
+    });
+    const electronLink = path.join(programs, "Electron.lnk");
+    if (fs.existsSync(electronLink) && shell.readShortcutLink(electronLink).target === process.execPath) {
+      fs.unlinkSync(electronLink);
+    }
+  } catch {
+    // 바로가기를 못 만들어도 실행에는 지장 없다 (아이콘만 Electron 기본)
+  }
 }
 
 function isAppUrl(url: string) {
