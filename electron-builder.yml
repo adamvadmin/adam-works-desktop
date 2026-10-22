@@ -9,6 +9,16 @@ files:
   - build/icons/**/*
   - pages/**/*
   - package.json
+# Electron 보안 스위치: Node로 실행·NODE_OPTIONS·디버그 인자 차단, app.asar 무결성 검사·asar에서만 로드, 쿠키 암호화
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  # 앱 안 로컬 화면(시작·설정·연결 대기)을 file:// 로 띄우므로 켜 둔다 (끄면 이 화면들이 열리지 않는다)
+  grantFileProtocolExtraPrivileges: true
 win:
   target:
     - nsis

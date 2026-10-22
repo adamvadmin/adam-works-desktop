@@ -7,6 +7,7 @@ import {
   Notification,
   powerMonitor,
   screen,
+  session,
   shell,
   Tray,
   type BrowserWindowConstructorOptions,
@@ -49,6 +50,11 @@ import {
 } from "./window-state";
 
 const APP_NAME = "V WORKS 메신저";
+/**
+ * 웹 화면에 허용하는 권한 (메신저 출처만). 그 외(카메라·마이크·위치·화면 공유 등)는 거부한다.
+ * Electron은 따로 막지 않으면 모든 권한 요청을 묻지 않고 허용한다.
+ */
+const ALLOWED_PERMISSIONS = new Set(["notifications", "clipboard-sanitized-write", "fullscreen"]);
 const SURFACE_COLOR = "#ffffff";
 /** 미리보기 화면 배경 (웹 .gw-viewer) */
 const VIEWER_COLOR = "#131313";
@@ -108,7 +114,8 @@ function asciiUserAgent() {
 function start() {
   app.userAgentFallback = asciiUserAgent();
   Menu.setApplicationMenu(null);
-  if (isDevTarget) ensureDevShortcut();
+  restrictPermissions();
+  if (isDevTarget && !app.isPackaged) ensureDevShortcut();
   if (!startHidden) createSplash();
   createMainWindow();
   createTray();
@@ -141,6 +148,16 @@ function ensureDevShortcut() {
   } catch {
     // 바로가기를 못 만들어도 실행에는 지장 없다 (아이콘만 Electron 기본)
   }
+}
+
+function restrictPermissions() {
+  const allowed = (permission: string, origin: string) => ALLOWED_PERMISSIONS.has(permission) && isAppUrl(origin);
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) =>
+    callback(allowed(permission, details.requestingUrl)),
+  );
+  session.defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
+    allowed(permission, requestingOrigin),
+  );
 }
 
 function isAppUrl(url: string) {
@@ -193,12 +210,15 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
     },
   });
 
-  // 허용 출처 밖으로 이동·새 창은 기본 브라우저로
-  window.webContents.on("will-navigate", (event, target) => {
-    if (isAppUrl(target) || isLocalPageUrl(target)) return;
+  // 허용 출처 밖으로 이동·리디렉션은 막고 기본 브라우저로 (로컬 화면은 loadFile로만 연다)
+  const keepInApp = (event: Electron.Event, target: string) => {
+    if (isAppUrl(target)) return;
     event.preventDefault();
     openExternal(target);
-  });
+  };
+  window.webContents.on("will-navigate", (event, target) => keepInApp(event, target));
+  window.webContents.on("will-redirect", (event, target) => keepInApp(event, target));
+  // 새 창은 열지 않고, 허용 출처 밖이면 기본 브라우저로
   window.webContents.setWindowOpenHandler(({ url: target }) => {
     if (!isAppUrl(target)) openExternal(target);
     return { action: "deny" };

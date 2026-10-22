@@ -70,6 +70,11 @@
 - `contextIsolation`, `sandbox`, `nodeIntegration: false`. 웹에는 위 API만 노출한다.
 - 메신저 출처 밖으로의 이동·새 창은 기본 브라우저로 연다.
 - IPC는 메인 창·메신저 출처에서 온 것만 받는다. 창 버튼은 우리 창의 메신저 출처·로컬 화면에서, 설정 API는 설정 창에서만 받는다.
+- 웹 화면 권한은 알림·클립보드 쓰기·전체 화면만 허용하고 카메라·마이크·위치 등은 거부한다 (Electron은 기본으로 모두 허용).
+- 허용 출처 밖으로의 이동·서버 리디렉션은 막고 기본 브라우저로 연다. 로컬 화면(`pages/`)은 `loadFile`로만 연다.
+- Electron fuses (`electron-builder.yml`): `ELECTRON_RUN_AS_NODE`·`NODE_OPTIONS`·`--inspect` 차단, app.asar 무결성 검사·asar에서만 로드, 쿠키 암호화. `grantFileProtocolExtraPrivileges`는 로컬 화면(file://) 때문에 켜 둔다. 그래서 Playwright `_electron`(디버그 인자 사용)으로는 설치본을 띄울 수 없고, `--remote-debugging-port`로 붙는다.
+- GitHub Actions는 커밋 해시로 고정한다.
+- 서명하지 않으므로 업데이트는 "GitHub 릴리스가 진짜인지"에 기댄다. 계정 2단계 인증, 불변 릴리스(immutable releases), `v*` 태그 보호 규칙을 켜 둔다 (저장소 설정).
 - 브리지 함수에는 복제 가능한 값만 넘긴다 (React 클릭 이벤트를 그대로 넘기면 "An object could not be cloned"로 실패).
 - User-Agent의 제품명(한글)은 ASCII(`VWorksMessenger/버전`)로 바꾼다. 서버 방화벽이 ASCII가 아닌 헤더를 거부해 WebSocket 연결이 403이 되기 때문.
 
@@ -99,4 +104,4 @@ npm run start:local  # 로컬 웹(localhost:3000/messenger)으로 실행 — ada
 
 ### 코드 서명
 
-아직 서명하지 않는다 (미결 사항). 첫 설치 때 Windows SmartScreen 경고("Windows의 PC 보호")가 뜨면 **추가 정보 → 실행**을 누른다.
+서명하지 않는다 (2026-10-22 결정: Store·유료 인증서 대신 안내로). 첫 설치 때 Windows SmartScreen 경고("Windows의 PC 보호")가 뜨면 **추가 정보 → 실행**을 누른다. 자동 업데이트는 프로그램이 직접 받아 설치하므로 경고가 다시 뜨지 않는다. 설치 링크는 사내 공지로만 배포한다 (가짜 설치 파일에 같은 버튼을 누르는 습관 방지).
