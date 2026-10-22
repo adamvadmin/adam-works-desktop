@@ -29,6 +29,13 @@ jobs:
             echo "태그 ${GITHUB_REF_NAME} 와 package.json 버전 v$VERSION 이 다릅니다." >&2
             exit 1
           fi
+      # electron-builder는 파일마다 동시에 릴리스를 만들어 초안이 둘로 나뉠 수 있어 (0.4.1), 먼저 하나 만들어 둔다
+      - name: 초안 릴리스 미리 만들기
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases"             -d "{\"tag_name\":\"${GITHUB_REF_NAME}\",\"name\":\"${GITHUB_REF_NAME#v}\",\"draft\":true}" > /dev/null
       - run: npm run release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

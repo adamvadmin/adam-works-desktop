@@ -94,7 +94,7 @@ npm run start:local  # 로컬 웹(localhost:3000/messenger)으로 실행 — ada
 
 1. `package.json`의 `version`을 올리고 커밋
 2. 같은 버전으로 태그 push: `git tag v0.1.1 && git push origin v0.1.1`
-3. GitHub Actions(`release.yml`)가 NSIS 설치 파일을 만들어 Releases에 올린다
+3. GitHub Actions(`release.yml`)가 초안(draft) 릴리스를 먼저 만들고, NSIS 설치 파일·`latest.yml`·`.blockmap`을 올린 뒤 파일을 확인하고 공개한다. 저장소가 **불변 릴리스**라 공개된 릴리스에는 파일을 더할 수 없고 태그도 잠기므로, 실패한 버전은 다시 쓰지 말고 버전을 올린다 (0.4.0이 그렇게 비어 있다)
 4. 설치된 프로그램은 시작 시·1시간마다 Releases를 확인해 새 버전을 내려받는다 (0.2.1+, 0.1.0·0.2.0은 6시간)
 5. 내려받기가 끝나면 Windows 알림("누르면 다시 시작해 적용")과 트레이 메뉴 "업데이트 적용하고 다시 시작"이 나온다. 그냥 두면 트레이에서 **종료**할 때 설치된다 (창 닫기는 트레이로 숨김이라 종료가 아니다)
 
