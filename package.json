@@ -1,7 +1,7 @@
 {
   "name": "adam-works-desktop",
   "productName": "V WORKS 메신저",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "V WORKS 채팅 전용 PC 프로그램 (works.adamv.kr/messenger 원격 로드)",
   "private": true,
   "main": "dist/main.js",
