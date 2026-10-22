@@ -1,0 +1,111 @@
+/* 앱 안 로컬 화면(시작·연결 대기·설정) 공통. 색은 웹(adam-works-fe custom.css)의 gw 토큰과 맞춘다 */
+:root {
+  --brand: #e8261a;
+  --brand-soft: #fdeceb;
+  --text: #0f172a;
+  --muted: #64748b;
+  --faint: #94a3b8;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
+  font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+  font-size: 13px;
+  cursor: default;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  cursor: default;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 10px;
+  background: rgb(100 116 139 / 0.32);
+  background-clip: padding-box;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.brand__v {
+  color: var(--brand);
+}
+
+.titlebar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  justify-content: space-between;
+  height: 32px;
+  -webkit-app-region: drag;
+}
+
+.titlebar__title {
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.titlebar__buttons {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.titlebar__btn svg {
+  width: 10px;
+  height: 10px;
+}
+
+.titlebar__btn:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.titlebar__btn--close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+body.is-blurred .titlebar__btn,
+body.is-blurred .titlebar__title {
+  color: var(--border-strong);
+}

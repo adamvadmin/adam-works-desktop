@@ -1,5 +1,6 @@
 import { app } from "electron";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 /** 불러올 메신저 화면. 로컬 개발은 ADAM_WORKS_URL=http://localhost:3000/messenger */
 export const APP_URL = process.env.ADAM_WORKS_URL || "https://works.adamv.kr/messenger";
@@ -25,6 +26,12 @@ export const RELOAD_RETRY_MS = 5_000;
 /** 자동 업데이트 확인 간격 (새 버전을 내려받으면 다시 시작하라고 안내) */
 export const UPDATE_CHECK_MS = 60 * 60 * 1000;
 
+/** 시작 화면을 띄운 뒤 웹이 준비 신호를 보내지 않아도 목록 창을 띄우는 시간 (이전 웹 호환·느린 네트워크) */
+export const MAIN_REVEAL_FALLBACK_MS = 8_000;
+
+/** 방 창: 준비 신호가 없어도 띄우는 시간 */
+export const ROOM_REVEAL_FALLBACK_MS = 2_500;
+
 /** 방 창을 연달아 열 때 겹치지 않게 비켜 놓는 간격 */
 export const ROOM_WINDOW_CASCADE_PX = 28;
 
@@ -37,9 +44,31 @@ export const IPC = {
   openRoom: "desktop:open-room",
   openRoomWindow: "desktop:open-room-window",
   jumpToMessage: "desktop:jump-to-message",
+  appReady: "desktop:app-ready",
+  openSettings: "desktop:open-settings",
+  windowMinimize: "window:minimize",
+  windowToggleMaximize: "window:toggle-maximize",
+  windowClose: "window:close",
+  windowSetPinned: "window:set-pinned",
+  windowGetState: "window:get-state",
+  windowState: "window:state",
+  settingsGet: "settings:get",
+  settingsSet: "settings:set",
+  settingsCheckUpdate: "settings:check-update",
+  settingsInstallUpdate: "settings:install-update",
 } as const;
 
 export function iconPath(name: string): string {
   // 패키징 후에도 app 경로 기준으로 build/icons에 들어 있다
   return path.join(app.getAppPath(), "build", "icons", name);
+}
+
+/** 앱에 들어 있는 로컬 화면 (시작 화면·연결 대기·설정) */
+export function pagePath(name: string): string {
+  return path.join(app.getAppPath(), "pages", name);
+}
+
+/** 로컬 화면 주소 접두사 (IPC 발신자 확인용) */
+export function pagesUrlPrefix(): string {
+  return pathToFileURL(path.join(app.getAppPath(), "pages") + path.sep).href;
 }

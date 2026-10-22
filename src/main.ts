@@ -21,25 +21,39 @@ import {
   IDLE_POLL_MS,
   IDLE_THRESHOLD_SECONDS,
   IPC,
+  MAIN_REVEAL_FALLBACK_MS,
   RELOAD_RETRY_MS,
+  ROOM_REVEAL_FALLBACK_MS,
   ROOM_WINDOW_CASCADE_PX,
   UPDATE_CHECK_MS,
   iconPath,
+  pagePath,
+  pagesUrlPrefix,
   roomUrl,
 } from "./config";
 import {
   initialBounds,
+  readPreferences,
   readSettings,
   roomWindowSize,
   trackRoomWindowSize,
   trackWindowState,
+  writePreferences,
   writeSettings,
 } from "./window-state";
+
+const APP_NAME = "V WORKS 메신저";
+const SURFACE_COLOR = "#ffffff";
 
 /** 메인 창 = 대화 목록 (닫으면 트레이로 숨김) */
 let win: BrowserWindow | null = null;
 /** 방 전용 창 (roomId → 창). 닫으면 없어진다 */
 const roomWindows = new Map<number, BrowserWindow>();
+/** 시작 화면 (목록 창이 준비되면 닫는다) */
+let splash: BrowserWindow | null = null;
+let settingsWindow: BrowserWindow | null = null;
+/** 화면을 띄운 창 (웹의 준비 신호·대체 시간 중 먼저 온 쪽에서 한 번만 띄운다) */
+const revealed = new WeakSet<BrowserWindow>();
 let tray: Tray | null = null;
 let quitting = false;
 let unreadCount = 0;
@@ -55,6 +69,9 @@ const isDevTarget = Boolean(process.env.ADAM_WORKS_URL);
 if (isDevTarget) {
   app.setPath("userData", `${app.getPath("userData")}-dev`);
 }
+
+/** 자동 실행(로그인 시 시작)은 트레이에만 두고 창은 띄우지 않는다 */
+const startHidden = process.argv.includes("--hidden");
 
 // —— 중복 실행 방지: 두 번째 실행은 기존 창을 띄운다 ——
 if (!app.requestSingleInstanceLock()) {
@@ -79,6 +96,7 @@ function asciiUserAgent() {
 function start() {
   app.userAgentFallback = asciiUserAgent();
   Menu.setApplicationMenu(null);
+  if (!startHidden) createSplash();
   createMainWindow();
   createTray();
   registerIpc();
@@ -94,23 +112,36 @@ function isAppUrl(url: string) {
   }
 }
 
+function isLocalPageUrl(url: string) {
+  return url.startsWith(pagesUrlPrefix());
+}
+
 function openExternal(url: string) {
   if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
 }
 
+/** 메인·방 창 (웹 화면을 띄우는 창) */
 function allWindows(): BrowserWindow[] {
   return [win, ...roomWindows.values()].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
 }
 
-/** 메인·방 창 공통: 보안 설정, 외부 링크, 오프라인 재시도, 우클릭 메뉴 */
+/** 제목 표시줄 없는 창의 공통 설정. 창 테두리·그림자·Windows 11 둥근 모서리·크기 조절은 유지된다 */
+function framelessOptions(): BrowserWindowConstructorOptions {
+  return {
+    titleBarStyle: "hidden",
+    show: false,
+    icon: iconPath("icon.png"),
+    backgroundColor: SURFACE_COLOR,
+    autoHideMenuBar: true,
+  };
+}
+
+/** 메인·방 창 공통: 보안 설정, 외부 링크, 오프라인 재시도, 우클릭 메뉴, 단축키, 창 상태 전달 */
 function createAppWindow(options: BrowserWindowConstructorOptions, url: string): BrowserWindow {
   const window = new BrowserWindow({
     minWidth: 360,
     minHeight: 420,
-    show: false,
-    icon: iconPath("icon.png"),
-    backgroundColor: "#f7f8fa",
-    autoHideMenuBar: true,
+    ...framelessOptions(),
     ...options,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -125,7 +156,7 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
 
   // 허용 출처 밖으로 이동·새 창은 기본 브라우저로
   window.webContents.on("will-navigate", (event, target) => {
-    if (isAppUrl(target)) return;
+    if (isAppUrl(target) || isLocalPageUrl(target)) return;
     event.preventDefault();
     openExternal(target);
   });
@@ -135,9 +166,10 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
   });
 
   // 서버에 닿지 않으면 안내 화면을 띄우고 주기적으로 다시 시도
-  window.webContents.on("did-fail-load", (_event, errorCode, _desc, failedUrl, isMainFrame) => {
+  window.webContents.on("did-fail-load", (_event, errorCode, _desc, _failedUrl, isMainFrame) => {
     if (!isMainFrame || errorCode === -3 /* ABORTED */) return;
-    void window.loadURL(offlinePage(failedUrl));
+    void window.loadFile(pagePath("offline.html"));
+    reveal(window);
     setTimeout(() => {
       if (!window.isDestroyed()) void window.loadURL(url);
     }, RELOAD_RETRY_MS);
@@ -158,34 +190,113 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
     if (items.length > 0) Menu.buildFromTemplate(items).popup({ window });
   });
 
-  // 화면을 새로 불러오면 현재 자리비움 상태를 다시 알려 준다
-  window.webContents.on("did-finish-load", () => window.webContents.send(IPC.idle, idle));
+  // Ctrl+W = 창 닫기. 개발 실행에서만 Ctrl+Shift+I 개발자 도구.
+  // 한글 입력 상태에서는 key가 "ㅈ"이 되므로 자판 위치(code)로 본다
+  window.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || !input.control) return;
+    if (input.code === "KeyW" && !input.shift && !input.alt) {
+      event.preventDefault();
+      window.close();
+    } else if (input.code === "KeyI" && input.shift && !app.isPackaged) {
+      event.preventDefault();
+      window.webContents.toggleDevTools();
+    }
+  });
+
+  // 손가락 확대(핀치) 막기. 글자 크기는 설정의 화면 배율로만 바꾼다
+  void window.webContents.setVisualZoomLevelLimits(1, 1);
+
+  // 화면을 새로 불러오면 현재 자리비움 상태·창 상태·배율을 다시 맞춘다
+  window.webContents.on("did-finish-load", () => {
+    window.webContents.setZoomFactor(readPreferences().zoom);
+    window.webContents.send(IPC.idle, idle);
+    sendWindowState(window);
+  });
   window.on("focus", () => window.flashFrame(false));
+  const syncState = () => sendWindowState(window);
+  window.on("maximize", syncState);
+  window.on("unmaximize", syncState);
+  window.on("restore", syncState);
+  window.on("focus", syncState);
+  window.on("blur", syncState);
+  window.on("always-on-top-changed", syncState);
 
   void window.loadURL(url);
   return window;
 }
 
+function windowState(window: BrowserWindow) {
+  return { maximized: window.isMaximized(), pinned: window.isAlwaysOnTop(), focused: window.isFocused() };
+}
+
+function sendWindowState(window: BrowserWindow) {
+  if (!window.isDestroyed()) window.webContents.send(IPC.windowState, windowState(window));
+}
+
+/** 시작 화면: 목록 창이 서버에서 화면을 받아 그릴 때까지 띄워 둔다 (빈 창·로딩 글자 대신) */
+function createSplash() {
+  splash = new BrowserWindow({
+    width: 300,
+    height: 340,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    show: false,
+    center: true,
+    icon: iconPath("icon.png"),
+    backgroundColor: SURFACE_COLOR,
+    title: APP_NAME,
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  splash.once("ready-to-show", () => splash?.show());
+  splash.on("closed", () => {
+    splash = null;
+  });
+  void splash.loadFile(pagePath("splash.html"));
+}
+
+function closeSplash() {
+  if (splash && !splash.isDestroyed()) splash.close();
+}
+
+/** 창을 처음 띄운다. 웹의 준비 신호(appReady)·연결 실패·대체 시간 중 먼저 오는 쪽에서 한 번만 */
+function reveal(window: BrowserWindow) {
+  if (window.isDestroyed() || revealed.has(window)) return;
+  revealed.add(window);
+  if (window === win) {
+    closeSplash();
+    if (startHidden) return;
+    if (readSettings().maximized) window.maximize();
+    showWindow(window);
+    return;
+  }
+  showWindow(window);
+}
+
 function createMainWindow() {
   const settings = readSettings();
-  win = createAppWindow({ ...initialBounds(), title: "V WORKS 메신저" }, APP_URL);
-  if (settings.maximized) win.maximize();
+  win = createAppWindow({ ...initialBounds(), title: APP_NAME }, APP_URL);
+  if (settings.mainPinned) win.setAlwaysOnTop(true);
   trackWindowState(win);
 
-  win.once("ready-to-show", () => {
-    // 자동 실행(로그인 시 시작)은 트레이에만 두고 창은 띄우지 않는다
-    if (!process.argv.includes("--hidden")) win?.show();
-  });
+  const main = win;
+  setTimeout(() => reveal(main), MAIN_REVEAL_FALLBACK_MS);
 
-  // 닫기 = 트레이로 숨김 (종료는 트레이 메뉴)
+  // 닫기 = 트레이로 숨김 (설정에서 "닫으면 종료"를 고르면 종료)
   win.on("close", (event) => {
     if (quitting) return;
+    if (!readPreferences().closeToTray) {
+      quitting = true;
+      app.quit();
+      return;
+    }
     event.preventDefault();
     win?.hide();
     if (!readSettings().trayHintShown) {
       writeSettings({ trayHintShown: true });
       new Notification({
-        title: "V WORKS 메신저",
+        title: APP_NAME,
         body: "트레이에서 계속 실행 중입니다. 종료하려면 트레이 아이콘을 우클릭하세요.",
       }).show();
     }
@@ -202,10 +313,10 @@ function openRoomWindow(roomId: number, seq?: number) {
   }
   const size = roomWindowSize();
   const position = cascadePosition();
-  const room = createAppWindow({ ...size, ...position, title: "V WORKS 메신저" }, roomUrl(roomId, seq));
+  const room = createAppWindow({ ...size, ...position, title: APP_NAME }, roomUrl(roomId, seq));
   roomWindows.set(roomId, room);
   trackRoomWindowSize(room);
-  room.once("ready-to-show", () => showWindow(room));
+  setTimeout(() => reveal(room), ROOM_REVEAL_FALLBACK_MS);
   room.on("closed", () => roomWindows.delete(roomId));
 }
 
@@ -221,17 +332,46 @@ function cascadePosition(): { x?: number; y?: number } {
   return { x: x + ROOM_WINDOW_CASCADE_PX, y: y + ROOM_WINDOW_CASCADE_PX };
 }
 
-function offlinePage(url: string) {
-  const html = `<!doctype html><html lang="ko"><meta charset="utf-8"><title>연결 대기</title>
-<body style="margin:0;display:flex;height:100vh;align-items:center;justify-content:center;font-family:'Malgun Gothic',sans-serif;background:#f7f8fa;color:#334155">
-<div style="text-align:center"><p style="font-size:16px;font-weight:600">서버에 연결할 수 없습니다</p>
-<p style="font-size:13px;color:#64748b">네트워크를 확인해 주세요. 잠시 후 자동으로 다시 시도합니다.</p>
-<p style="font-size:11px;color:#94a3b8">${escapeHtml(url)}</p></div></body></html>`;
-  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
-}
-
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+/** 설정 창 (앱 안 로컬 화면). 하나만 띄운다 */
+function openSettingsWindow() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    showWindow(settingsWindow);
+    return;
+  }
+  settingsWindow = new BrowserWindow({
+    ...framelessOptions(),
+    width: 400,
+    height: 660,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    title: `${APP_NAME} 설정`,
+    parent: win && win.isVisible() ? win : undefined,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      spellcheck: false,
+    },
+  });
+  const window = settingsWindow;
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && (input.key === "Escape" || (input.control && input.code === "KeyW"))) {
+      event.preventDefault();
+      window.close();
+    }
+  });
+  window.on("focus", () => sendWindowState(window));
+  window.on("blur", () => sendWindowState(window));
+  window.once("ready-to-show", () => window.show());
+  window.on("closed", () => {
+    settingsWindow = null;
+  });
+  void window.loadFile(pagePath("settings.html"));
 }
 
 function showWindow(window: BrowserWindow | null | undefined) {
@@ -249,22 +389,24 @@ function createTray() {
 
 function refreshTray() {
   if (!tray) return;
-  const openAtLogin = app.getLoginItemSettings().openAtLogin;
+  const preferences = readPreferences();
   tray.setImage(nativeImage.createFromPath(iconPath(unreadCount > 0 ? "tray-unread.png" : "tray.png")));
-  tray.setToolTip(unreadCount > 0 ? `V WORKS 메신저 · 안 읽은 메시지 ${unreadCount}` : "V WORKS 메신저");
+  tray.setToolTip(unreadCount > 0 ? `${APP_NAME} · 안 읽은 메시지 ${unreadCount}` : APP_NAME);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "열기", click: () => showWindow(win) },
+      { label: "설정", click: openSettingsWindow },
       { type: "separator" },
       {
-        label: "Windows 시작 시 자동 실행",
+        label: "알림 끄기",
         type: "checkbox",
-        checked: openAtLogin,
+        checked: !preferences.notify,
         click: (item) => {
-          app.setLoginItemSettings({ openAtLogin: item.checked, args: ["--hidden"] });
+          writePreferences({ notify: !item.checked });
           refreshTray();
         },
       },
+      { type: "separator" },
       { label: `버전 ${app.getVersion()}`, enabled: false },
       readyUpdateVersion
         ? { label: `업데이트 적용하고 다시 시작 (${readyUpdateVersion})`, click: installUpdateNow }
@@ -291,6 +433,25 @@ function fromMainWindow(event: IpcMainEvent) {
   return fromApp(event) && event.sender === win?.webContents;
 }
 
+function fromSettings(event: IpcMainEvent | IpcMainInvokeEvent) {
+  return settingsWindow != null && !settingsWindow.isDestroyed() && event.sender === settingsWindow.webContents;
+}
+
+/** 창 버튼: 우리 창이 웹 화면이나 앱 안 로컬 화면(연결 대기·설정)에서 보낸 것만 */
+function controlledWindow(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | null {
+  const url = event.senderFrame?.url ?? "";
+  if (!isAppUrl(url) && !isLocalPageUrl(url)) return null;
+  const window = BrowserWindow.fromWebContents(event.sender);
+  const ours = window != null && (allWindows().includes(window) || window === settingsWindow);
+  return ours && !window.isDestroyed() ? window : null;
+}
+
+function notificationContent(payload: { title: string; body: string }) {
+  return readPreferences().preview
+    ? { title: payload.title, body: payload.body }
+    : { title: APP_NAME, body: "새 메시지가 있습니다." };
+}
+
 function registerIpc() {
   // 알림은 메인(목록) 창만 요청한다. 해당 방 창을 보고 있으면 알림 대신 아무것도 하지 않는다
   ipcMain.on(IPC.notify, (event, payload: { title: string; body: string; roomId: number }) => {
@@ -299,8 +460,13 @@ function registerIpc() {
     if (room && !room.isDestroyed() && room.isVisible() && room.isFocused()) return;
     if (room && !room.isDestroyed() && room.isVisible()) room.flashFrame(true);
     else if (win && !win.isFocused()) win.flashFrame(true);
-    if (!Notification.isSupported()) return;
-    const notification = new Notification({ title: payload.title, body: payload.body, icon: iconPath("icon.png") });
+    const preferences = readPreferences();
+    if (!preferences.notify || !Notification.isSupported()) return;
+    const notification = new Notification({
+      ...notificationContent(payload),
+      icon: iconPath("icon.png"),
+      silent: !preferences.sound,
+    });
     activeNotifications.add(notification);
     notification.on("click", () => {
       if (Number.isFinite(payload.roomId)) openRoomWindow(payload.roomId);
@@ -335,7 +501,67 @@ function registerIpc() {
     openRoomWindow(roomId, seq != null && seq > 0 ? seq : undefined);
   });
 
-  ipcMain.handle(IPC.getVersion, (event) => (fromApp(event) ? app.getVersion() : ""));
+  ipcMain.handle(IPC.getVersion, (event) => (fromApp(event) || fromSettings(event) ? app.getVersion() : ""));
+
+  ipcMain.on(IPC.appReady, (event) => {
+    if (!fromApp(event)) return;
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) reveal(window);
+  });
+
+  ipcMain.on(IPC.openSettings, (event) => {
+    if (fromApp(event)) openSettingsWindow();
+  });
+
+  // —— 창 버튼 (웹이 그리는 제목 표시줄) ——
+  ipcMain.on(IPC.windowMinimize, (event) => controlledWindow(event)?.minimize());
+  ipcMain.on(IPC.windowToggleMaximize, (event) => {
+    const window = controlledWindow(event);
+    if (!window || !window.isMaximizable()) return;
+    if (window.isMaximized()) window.unmaximize();
+    else window.maximize();
+  });
+  ipcMain.on(IPC.windowClose, (event) => controlledWindow(event)?.close());
+  ipcMain.on(IPC.windowSetPinned, (event, pinned: boolean) => {
+    const window = controlledWindow(event);
+    if (!window) return;
+    window.setAlwaysOnTop(Boolean(pinned));
+    if (window === win) writeSettings({ mainPinned: Boolean(pinned) });
+    sendWindowState(window);
+  });
+  ipcMain.handle(IPC.windowGetState, (event) => {
+    const window = controlledWindow(event);
+    return window ? windowState(window) : null;
+  });
+
+  // —— 설정 창 ——
+  ipcMain.handle(IPC.settingsGet, (event) => {
+    if (!fromSettings(event)) return null;
+    return {
+      ...readPreferences(),
+      openAtLogin: app.getLoginItemSettings().openAtLogin,
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+      readyUpdateVersion,
+    };
+  });
+  ipcMain.handle(IPC.settingsSet, (event, patch: Record<string, unknown>) => {
+    if (!fromSettings(event) || patch == null || typeof patch !== "object") return null;
+    if (typeof patch.openAtLogin === "boolean") {
+      app.setLoginItemSettings({ openAtLogin: patch.openAtLogin, args: ["--hidden"] });
+    }
+    const preferences = writePreferences(patch);
+    for (const window of allWindows()) window.webContents.setZoomFactor(preferences.zoom);
+    refreshTray();
+    return { ...preferences, openAtLogin: app.getLoginItemSettings().openAtLogin };
+  });
+  ipcMain.handle(IPC.settingsCheckUpdate, async (event) => {
+    if (!fromSettings(event)) return null;
+    return checkUpdateForSettings();
+  });
+  ipcMain.on(IPC.settingsInstallUpdate, (event) => {
+    if (fromSettings(event)) installUpdateNow();
+  });
 }
 
 /** 입력 없음 10분 또는 화면 잠금이면 자리비움 (모든 창에 알린다) */
@@ -355,7 +581,7 @@ function watchIdle() {
 
 /**
  * GitHub Releases 자동 업데이트 (설치본에서만).
- * 내려받기가 끝나면 알림·트레이 메뉴로 "다시 시작해 적용"을 안내한다.
+ * 내려받기가 끝나면 알림·트레이 메뉴·설정 창으로 "다시 시작해 적용"을 안내한다.
  * 그냥 두어도 종료할 때 설치되지만, 창 닫기는 트레이로 숨김이라 종료가 드물다.
  */
 function checkForUpdates() {
@@ -364,7 +590,7 @@ function checkForUpdates() {
     readyUpdateVersion = info.version;
     refreshTray();
     const notification = new Notification({
-      title: "V WORKS 메신저 업데이트",
+      title: `${APP_NAME} 업데이트`,
       body: `새 버전 ${info.version}이 준비됐습니다. 이 알림을 누르면 다시 시작해 적용합니다.`,
       icon: iconPath("icon.png"),
     });
@@ -380,6 +606,20 @@ function checkForUpdates() {
 function checkUpdateNow() {
   if (!app.isPackaged || readyUpdateVersion) return;
   void autoUpdater.checkForUpdates().catch(() => undefined);
+}
+
+/** 설정 창의 "업데이트 확인" 결과 */
+async function checkUpdateForSettings(): Promise<{ state: "dev" | "ready" | "latest" | "downloading" | "error"; version?: string }> {
+  if (!app.isPackaged) return { state: "dev" };
+  if (readyUpdateVersion) return { state: "ready", version: readyUpdateVersion };
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return result?.isUpdateAvailable
+      ? { state: "downloading", version: result.updateInfo.version }
+      : { state: "latest" };
+  } catch {
+    return { state: "error" };
+  }
 }
 
 function installUpdateNow() {

@@ -3,3 +3,4 @@ dist/
 release/
 build/icons/
 *.log
+build/installer/

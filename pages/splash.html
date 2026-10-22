@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src file:; style-src file: 'unsafe-inline'" />
+    <title>V WORKS 메신저</title>
+    <link rel="stylesheet" href="common.css" />
+    <style>
+      body {
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        -webkit-app-region: drag;
+      }
+
+      .logo {
+        width: 76px;
+        height: 76px;
+      }
+
+      .name {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .name small {
+        display: block;
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 400;
+        text-align: center;
+      }
+
+      .loader {
+        position: relative;
+        width: 96px;
+        height: 3px;
+        margin-top: 18px;
+        overflow: hidden;
+        border-radius: 3px;
+        background: var(--border);
+      }
+
+      .loader::after {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 40%;
+        border-radius: 3px;
+        background: var(--brand);
+        animation: slide 1.1s ease-in-out infinite;
+      }
+
+      @keyframes slide {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(250%);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <img class="logo" src="../build/icons/icon.png" alt="" />
+    <p class="name brand"><span class="brand__v">V</span> WORKS<small>메신저</small></p>
+    <div class="loader" role="progressbar" aria-label="불러오는 중"></div>
+  </body>
+</html>

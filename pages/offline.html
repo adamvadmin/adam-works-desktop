@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src file:; style-src file: 'unsafe-inline'" />
+    <title>연결 대기 - V WORKS 메신저</title>
+    <link rel="stylesheet" href="common.css" />
+    <style>
+      main {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 24px;
+        text-align: center;
+      }
+
+      .icon {
+        width: 44px;
+        height: 44px;
+        margin-bottom: 10px;
+        color: var(--faint);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .retry {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 14px;
+        color: var(--faint);
+        font-size: 12px;
+      }
+
+      .retry::before {
+        content: "";
+        width: 10px;
+        height: 10px;
+        border: 2px solid var(--border-strong);
+        border-top-color: var(--brand);
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="titlebar">
+      <div class="titlebar__title"><span class="brand"><span class="brand__v">V</span> WORKS</span></div>
+      <div class="titlebar__buttons">
+        <button type="button" class="titlebar__btn" data-window-action="minimize" aria-label="최소화">
+          <svg viewBox="0 0 10 10" fill="none" stroke="currentColor"><path d="M0 5.5h10" /></svg>
+        </button>
+        <button type="button" class="titlebar__btn titlebar__btn--close" data-window-action="close" aria-label="닫기">
+          <svg viewBox="0 0 10 10" fill="none" stroke="currentColor"><path d="m.5.5 9 9M9.5.5l-9 9" /></svg>
+        </button>
+      </div>
+    </div>
+    <main>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 15.5a5 5 0 0 1 6 0M12 19h.01M3 3l18 18" />
+      </svg>
+      <h1>서버에 연결할 수 없습니다</h1>
+      <p>네트워크 연결을 확인해 주세요.</p>
+      <span class="retry">잠시 후 자동으로 다시 연결합니다</span>
+    </main>
+    <script src="titlebar.js"></script>
+  </body>
+</html>

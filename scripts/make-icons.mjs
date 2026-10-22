@@ -4,6 +4,8 @@
  * - build/icons/tray.png      32px 트레이 아이콘
  * - build/icons/tray-unread.png 32px 트레이 아이콘 + 안 읽음 점
  * - build/icons/overlay.png   32px 작업표시줄 안 읽음 오버레이 (빨간 점)
+ * - build/installer/sidebar.bmp 164x314 설치 화면 시작·마침 페이지 왼쪽 그림
+ * - build/installer/header.bmp  150x57 설치 진행 페이지 머리 그림
  *
  * 디자인: 브랜드 빨강(#e8261a) 둥근 사각형 위 흰 말풍선
  */
@@ -11,10 +13,13 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 
-const OUT = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..", "build", "icons");
+const BUILD = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..", "build");
+const OUT = path.join(BUILD, "icons");
+const INSTALLER_OUT = path.join(BUILD, "installer");
 const BRAND = [0xe8, 0x26, 0x1a];
 const WHITE = [0xff, 0xff, 0xff];
 const DOT = [0xff, 0x55, 0x4f];
+const BRAND_DARK = [0xb8, 0x1c, 0x12];
 const SUPERSAMPLE = 4;
 
 function crc32(buf) {
@@ -122,7 +127,63 @@ function render(size, colorAt) {
   return encodePng(size, rgba);
 }
 
+/** 24비트 BMP (NSIS 설치 화면 그림은 BMP만 받는다). colorAt은 픽셀 좌표를 받아 불투명 색을 돌려준다 */
+function renderBmp(width, height, colorAt) {
+  const rowSize = Math.ceil((width * 3) / 4) * 4;
+  const pixels = Buffer.alloc(rowSize * height);
+  for (let py = 0; py < height; py++) {
+    for (let px = 0; px < width; px++) {
+      const sum = [0, 0, 0];
+      for (let sy = 0; sy < SUPERSAMPLE; sy++) {
+        for (let sx = 0; sx < SUPERSAMPLE; sx++) {
+          const color = colorAt(px + (sx + 0.5) / SUPERSAMPLE, py + (sy + 0.5) / SUPERSAMPLE);
+          for (let c = 0; c < 3; c++) sum[c] += color[c];
+        }
+      }
+      // BMP는 아래 줄부터, BGR 순서
+      const i = (height - 1 - py) * rowSize + px * 3;
+      pixels[i] = Math.round(sum[2] / SUPERSAMPLE ** 2);
+      pixels[i + 1] = Math.round(sum[1] / SUPERSAMPLE ** 2);
+      pixels[i + 2] = Math.round(sum[0] / SUPERSAMPLE ** 2);
+    }
+  }
+  const header = Buffer.alloc(54);
+  header.write("BM", 0);
+  header.writeUInt32LE(54 + pixels.length, 2);
+  header.writeUInt32LE(54, 10);
+  header.writeUInt32LE(40, 14);
+  header.writeInt32LE(width, 18);
+  header.writeInt32LE(height, 22);
+  header.writeUInt16LE(1, 26);
+  header.writeUInt16LE(24, 28);
+  header.writeUInt32LE(pixels.length, 34);
+  header.writeInt32LE(2835, 38);
+  header.writeInt32LE(2835, 42);
+  return Buffer.concat([header, pixels]);
+}
+
+function mix(a, b, t) {
+  return a.map((v, i) => v + (b[i] - v) * t);
+}
+
+/** 앱 아이콘을 (left, top)에 size 크기로 놓고, 바깥은 background(x, y) 색 */
+function withIcon(left, top, size, background) {
+  return (x, y) => appIconColor((x - left) / size, (y - top) / size, false) ?? background(x, y);
+}
+
+/** 시작·마침 페이지 왼쪽: 브랜드 빨강 세로 그라데이션 위 흰 말풍선 */
+function sidebarColor(x, y) {
+  const u = (x - 22) / 120;
+  const v = (y - 70) / 120;
+  const bubble =
+    inRoundRect(u, v, 0.2, 0.24, 0.8, 0.66, 0.12) || inTriangle(u, v, [0.3, 0.6], [0.48, 0.6], [0.28, 0.8]);
+  return bubble ? WHITE : mix(BRAND, BRAND_DARK, y / 314);
+}
+
 fs.mkdirSync(OUT, { recursive: true });
+fs.mkdirSync(INSTALLER_OUT, { recursive: true });
+fs.writeFileSync(path.join(INSTALLER_OUT, "sidebar.bmp"), renderBmp(164, 314, sidebarColor));
+fs.writeFileSync(path.join(INSTALLER_OUT, "header.bmp"), renderBmp(150, 57, withIcon(97, 8, 41, () => WHITE)));
 fs.writeFileSync(path.join(OUT, "icon.png"), render(256, (x, y) => appIconColor(x, y, false)));
 fs.writeFileSync(path.join(OUT, "tray.png"), render(32, (x, y) => appIconColor(x, y, false)));
 fs.writeFileSync(path.join(OUT, "tray-unread.png"), render(32, (x, y) => appIconColor(x, y, true)));

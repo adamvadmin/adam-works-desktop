@@ -19,15 +19,31 @@
 - 창마다 서버와 실시간 연결이 하나씩 생긴다 (사용자 20명 규모에서 문제없음).
 - 0.1.0 설치본은 `openRoomWindow`가 없어 웹이 예전처럼 한 창 2단으로 보여 준다 (자동 업데이트 후 0.2.0 방식).
 
+## 데스크톱 앱다운 화면 (0.4.0+)
+
+웹 페이지를 띄운 티가 나지 않게 한다.
+
+- **제목 표시줄 없는 창** (`titleBarStyle: "hidden"`): 상단바(로고·설정·항상 위·최소화·최대화·닫기)는 웹 `DesktopTitleBar`가 그린다. 창 테두리·그림자·Windows 11 둥근 모서리·크기 조절·스냅은 그대로다. 상단바와 대화 머리글 빈 곳을 끌어 창을 옮긴다.
+- **시작 화면** (`pages/splash.html`): 목록 창은 웹이 `appReady()`를 보낼 때(목록을 받은 뒤·로그인 화면) 띄운다. 신호가 없으면 8초 뒤(방 창 2.5초) 띄운다 — 이전 웹 호환.
+- **웹 동작 정리** (웹 `html.gw-desktop`): 입력창·메시지 본문만 글자 선택, 이미지·링크 끌기 막기, 기본 화살표 커서, 얇은 스크롤바, 시스템 글꼴(Segoe UI·맑은 고딕). Ctrl+휠·손가락 확대는 막고 글자 크기는 설정에서 바꾼다.
+- **단축키**: Esc(방 창 닫기 — 모달·검색이 열려 있으면 그쪽 먼저), Ctrl+W(창 닫기, 한글 입력 상태 포함).
+- **설정 창** (`pages/settings.html`, 상단바·트레이 메뉴 "설정"): 자동 실행, 목록 창 닫기 동작(트레이로 숨기기/종료), 알림 표시·미리보기·소리, 글자 크기(90·100·110·125%), 버전·업데이트 확인. 트레이 메뉴에 "알림 끄기"도 있다.
+- **연결 대기 화면** (`pages/offline.html`): 서버에 닿지 않으면 띄우고 5초마다 다시 연결한다.
+- **설치 마법사**: 시작(그림·안내) → 설치 → 마침(바로 실행). 한국어, 설치 범위는 현재 사용자로 고정(`build/installer.nsh`). 자동 업데이트는 화면 없이 조용히 설치된다.
+
+**배포 순서**: 웹(`DesktopTitleBar`)을 먼저 배포한 뒤 0.4.0 태그를 올린다. 0.4.0이 이전 웹을 띄우면 상단바가 없어 창을 옮기거나 닫을 수 없다. 반대로 0.3.x 설치본은 `windowControls`가 없어 웹이 상단바를 그리지 않으므로 그대로 쓸 수 있다.
+
 ## 구성
 
 | 파일 | 역할 |
 |---|---|
-| `src/main.ts` | 창, 트레이 상주, 중복 실행 방지, 알림·배지·깜빡임 IPC, 자리비움 감지, 자동 업데이트 |
-| `src/preload.ts` | 웹에 `window.desktop` 노출 (웹 타입: `adam-works-fe/src/lib/chat/desktop.ts`) |
+| `src/main.ts` | 창(목록·방·시작·설정), 트레이 상주, 중복 실행 방지, 알림·배지·깜빡임·창 버튼 IPC, 단축키, 자리비움 감지, 자동 업데이트 |
+| `src/preload.ts` | 웹·로컬 화면에 `window.desktop` 노출 (웹 타입: `adam-works-fe/src/lib/chat/desktop.ts`) |
 | `src/config.ts` | 불러올 주소·IPC 채널·주기 |
-| `src/window-state.ts` | 창 위치·크기 기억 |
-| `scripts/make-icons.mjs` | 아이콘 PNG 생성 (`build/icons`, 커밋하지 않음) |
+| `src/window-state.ts` | 창 위치·크기·항상 위, 설정값 저장 (`userData/settings.json`) |
+| `pages/` | 앱 안 로컬 화면 (시작·연결 대기·설정) |
+| `build/installer.nsh` | 설치 마법사 추가 설정 (UTF-8 BOM) |
+| `scripts/make-icons.mjs` | 아이콘 PNG·설치 화면 BMP 생성 (`build/icons`·`build/installer`, 커밋하지 않음) |
 
 ### window.desktop
 
@@ -40,12 +56,17 @@
 | `getVersion()` | 앱 버전 |
 | `onIdleChange(cb)` | 입력 없음 10분·화면 잠금·절전 → `true` (자리비움) |
 | `onOpenRoom(cb)` | 알림 클릭 시 방 ID — 0.1.0 호환용 (0.2.0은 방 창을 직접 연다) |
+| `appReady()` | 화면이 그려졌음을 알림 → 창을 띄운다 — 0.4.0+ |
+| `openSettings()` | 설정 창 열기 — 0.4.0+ |
+| `windowControls` | `minimize`·`toggleMaximize`·`close`·`setPinned`·`getState`·`onStateChange` (웹 상단바용) — 0.4.0+ |
+| `settings` | 설정 창 전용 (`get`·`set`·`checkUpdate`·`installUpdate`). 다른 화면에서 부르면 무시 |
 
 ### 보안
 
 - `contextIsolation`, `sandbox`, `nodeIntegration: false`. 웹에는 위 API만 노출한다.
 - 메신저 출처 밖으로의 이동·새 창은 기본 브라우저로 연다.
-- IPC는 메인 창·메신저 출처에서 온 것만 받는다.
+- IPC는 메인 창·메신저 출처에서 온 것만 받는다. 창 버튼은 우리 창의 메신저 출처·로컬 화면에서, 설정 API는 설정 창에서만 받는다.
+- 브리지 함수에는 복제 가능한 값만 넘긴다 (React 클릭 이벤트를 그대로 넘기면 "An object could not be cloned"로 실패).
 - User-Agent의 제품명(한글)은 ASCII(`VWorksMessenger/버전`)로 바꾼다. 서버 방화벽이 ASCII가 아닌 헤더를 거부해 WebSocket 연결이 403이 되기 때문.
 
 ## 개발

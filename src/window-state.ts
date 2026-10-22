@@ -11,7 +11,28 @@ type Settings = {
   roomSize?: Size;
   /** 닫기 = 트레이로 숨김 안내를 이미 보여 줬는지 */
   trayHintShown?: boolean;
+  /** 목록 창 항상 위 */
+  mainPinned?: boolean;
+  preferences?: Partial<Preferences>;
 };
+
+/** 설정 창에서 바꾸는 값 */
+export type Preferences = {
+  /** 새 메시지 알림 표시 */
+  notify: boolean;
+  /** 알림에 보낸 사람·내용 표시 (끄면 "새 메시지가 있습니다"만) */
+  preview: boolean;
+  /** 알림 소리 */
+  sound: boolean;
+  /** 화면 배율 */
+  zoom: number;
+  /** 목록 창 닫기 = 트레이로 숨김 (끄면 프로그램 종료) */
+  closeToTray: boolean;
+};
+
+export const ZOOM_LEVELS = [0.9, 1, 1.1, 1.25];
+
+const DEFAULT_PREFERENCES: Preferences = { notify: true, preview: true, sound: true, zoom: 1, closeToTray: true };
 
 /** 메인 창은 목록만 보이므로 카카오톡 목록처럼 좁게 시작한다 */
 const DEFAULT_SIZE: Size = { width: 400, height: 720 };
@@ -70,4 +91,19 @@ export function trackRoomWindowSize(win: BrowserWindow) {
     const [width, height] = win.getSize();
     writeSettings({ roomSize: { width, height } });
   });
+}
+
+export function readPreferences(): Preferences {
+  return { ...DEFAULT_PREFERENCES, ...readSettings().preferences };
+}
+
+/** 설정 창에서 받은 값 중 아는 키·형식만 저장한다 */
+export function writePreferences(patch: Partial<Record<keyof Preferences, unknown>>): Preferences {
+  const next = readPreferences();
+  for (const key of ["notify", "preview", "sound", "closeToTray"] as const) {
+    if (typeof patch[key] === "boolean") next[key] = patch[key];
+  }
+  if (typeof patch.zoom === "number" && ZOOM_LEVELS.includes(patch.zoom)) next.zoom = patch.zoom;
+  writeSettings({ preferences: next });
+  return next;
 }

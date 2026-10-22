@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src file:; style-src file: 'unsafe-inline'" />
+    <title>설정 - V WORKS 메신저</title>
+    <link rel="stylesheet" href="common.css" />
+    <style>
+      main {
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px 20px 20px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      section {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      section:last-child {
+        border-bottom: 0;
+      }
+
+      h2 {
+        margin: 0 0 4px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 40px;
+      }
+
+      .row.is-disabled {
+        opacity: 0.45;
+      }
+
+      .row small {
+        display: block;
+        color: var(--faint);
+        font-size: 11px;
+      }
+
+      /* 켜기/끄기 스위치 */
+      .switch {
+        position: relative;
+        flex-shrink: 0;
+        width: 36px;
+        height: 20px;
+        margin: 0;
+        border-radius: 10px;
+        background: var(--border-strong);
+        appearance: none;
+        transition: background 0.15s;
+      }
+
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 2px rgb(15 23 42 / 0.2);
+        transition: transform 0.15s;
+      }
+
+      .switch:checked {
+        background: var(--brand);
+      }
+
+      .switch:checked::after {
+        transform: translateX(16px);
+      }
+
+      .switch:focus-visible,
+      .segment button:focus-visible,
+      .action:focus-visible {
+        outline: 2px solid var(--brand);
+        outline-offset: 2px;
+      }
+
+      .segment {
+        display: flex;
+        padding: 2px;
+        border-radius: 8px;
+        background: var(--bg);
+      }
+
+      .segment button {
+        flex: 1;
+        padding: 5px 0;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .segment button.is-active {
+        background: var(--surface);
+        box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .segment--wide {
+        margin-top: 4px;
+      }
+
+      .action {
+        padding: 5px 12px;
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--text);
+      }
+
+      .action:hover {
+        background: var(--bg);
+      }
+
+      .action--primary {
+        border-color: var(--brand);
+        background: var(--brand);
+        color: #fff;
+      }
+
+      .action--primary:hover {
+        background: #c41f15;
+      }
+
+      .status {
+        min-height: 16px;
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="titlebar">
+      <div class="titlebar__title">V WORKS 메신저</div>
+      <div class="titlebar__buttons">
+        <button type="button" class="titlebar__btn titlebar__btn--close" data-window-action="close" aria-label="닫기">
+          <svg viewBox="0 0 10 10" fill="none" stroke="currentColor"><path d="m.5.5 9 9M9.5.5l-9 9" /></svg>
+        </button>
+      </div>
+    </div>
+    <main>
+      <h1>설정</h1>
+
+      <section>
+        <h2>일반</h2>
+        <label class="row">
+          <span>Windows 시작 시 자동 실행<small>로그인하면 트레이에서 조용히 시작합니다</small></span>
+          <input type="checkbox" class="switch" data-key="openAtLogin" />
+        </label>
+        <div class="row">
+          <span>목록 창 닫기 버튼을 누르면</span>
+        </div>
+        <div class="segment segment--wide" data-key="closeToTray" role="radiogroup" aria-label="목록 창 닫기 동작">
+          <button type="button" data-value="true">트레이로 숨기기</button>
+          <button type="button" data-value="false">프로그램 종료</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>알림</h2>
+        <label class="row">
+          <span>새 메시지 알림</span>
+          <input type="checkbox" class="switch" data-key="notify" />
+        </label>
+        <label class="row" data-depends="notify">
+          <span>보낸 사람·내용 미리보기<small>끄면 "새 메시지가 있습니다"만 보입니다</small></span>
+          <input type="checkbox" class="switch" data-key="preview" />
+        </label>
+        <label class="row" data-depends="notify">
+          <span>알림 소리</span>
+          <input type="checkbox" class="switch" data-key="sound" />
+        </label>
+      </section>
+
+      <section>
+        <h2>화면</h2>
+        <div class="row"><span>글자 크기</span></div>
+        <div class="segment segment--wide" data-key="zoom" role="radiogroup" aria-label="글자 크기">
+          <button type="button" data-value="0.9">작게</button>
+          <button type="button" data-value="1">보통</button>
+          <button type="button" data-value="1.1">크게</button>
+          <button type="button" data-value="1.25">아주 크게</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>정보</h2>
+        <div class="row">
+          <span>버전 <span id="version"></span></span>
+          <button type="button" class="action" id="update">업데이트 확인</button>
+        </div>
+        <p class="status" id="update-status" role="status"></p>
+      </section>
+    </main>
+    <script src="titlebar.js"></script>
+    <script src="settings.js"></script>
+  </body>
+</html>
