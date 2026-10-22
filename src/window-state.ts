@@ -9,6 +9,8 @@ type Settings = {
   maximized?: boolean;
   /** 방 창 크기 (마지막으로 조절한 크기를 모든 방 창이 쓴다) */
   roomSize?: Size;
+  /** 첨부 미리보기 창 크기 */
+  viewerSize?: Size;
   /** 닫기 = 트레이로 숨김 안내를 이미 보여 줬는지 */
   trayHintShown?: boolean;
   /** 목록 창 항상 위 */
@@ -37,6 +39,7 @@ const DEFAULT_PREFERENCES: Preferences = { notify: true, preview: true, sound: t
 /** 메인 창은 목록만 보이므로 카카오톡 목록처럼 좁게 시작한다 */
 const DEFAULT_SIZE: Size = { width: 400, height: 720 };
 const DEFAULT_ROOM_SIZE: Size = { width: 440, height: 680 };
+const DEFAULT_VIEWER_SIZE: Size = { width: 900, height: 720 };
 
 function file() {
   return path.join(app.getPath("userData"), "settings.json");
@@ -86,10 +89,23 @@ export function roomWindowSize(): Size {
 }
 
 export function trackRoomWindowSize(win: BrowserWindow) {
+  trackSize(win, "roomSize");
+}
+
+export function viewerWindowSize(): Size {
+  return readSettings().viewerSize ?? DEFAULT_VIEWER_SIZE;
+}
+
+export function trackViewerWindowSize(win: BrowserWindow) {
+  trackSize(win, "viewerSize");
+}
+
+/** 마지막으로 조절한 크기를 다음 창도 쓴다 */
+function trackSize(win: BrowserWindow, key: "roomSize" | "viewerSize") {
   win.on("resized", () => {
     if (win.isDestroyed() || win.isMaximized() || win.isMinimized()) return;
     const [width, height] = win.getSize();
-    writeSettings({ roomSize: { width, height } });
+    writeSettings({ [key]: { width, height } });
   });
 }
 

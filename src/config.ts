@@ -14,6 +14,11 @@ export function roomUrl(roomId: number, seq?: number): string {
   return seq != null ? `${base}?seq=${seq}` : base;
 }
 
+/** 첨부 미리보기 창 주소 (첨부 정보는 쿼리로 넘긴다. 파일은 화면이 로그인 정보로 받는다) */
+export function viewerUrl(query: URLSearchParams): string {
+  return `${APP_ORIGIN}/messenger/viewer?${query.toString()}`;
+}
+
 export const APP_USER_MODEL_ID = "kr.adamv.works.messenger";
 
 /** 자리비움 판단: 입력 없음 10분 */
@@ -44,6 +49,7 @@ export const IPC = {
   openRoom: "desktop:open-room",
   openRoomWindow: "desktop:open-room-window",
   jumpToMessage: "desktop:jump-to-message",
+  openViewerWindow: "desktop:open-viewer-window",
   appReady: "desktop:app-ready",
   openSettings: "desktop:open-settings",
   windowMinimize: "window:minimize",

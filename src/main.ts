@@ -6,6 +6,7 @@ import {
   nativeImage,
   Notification,
   powerMonitor,
+  screen,
   shell,
   Tray,
   type BrowserWindowConstructorOptions,
@@ -30,6 +31,7 @@ import {
   pagePath,
   pagesUrlPrefix,
   roomUrl,
+  viewerUrl,
 } from "./config";
 import {
   initialBounds,
@@ -37,13 +39,17 @@ import {
   readSettings,
   roomWindowSize,
   trackRoomWindowSize,
+  trackViewerWindowSize,
   trackWindowState,
+  viewerWindowSize,
   writePreferences,
   writeSettings,
 } from "./window-state";
 
 const APP_NAME = "V WORKS 메신저";
 const SURFACE_COLOR = "#ffffff";
+/** 미리보기 화면 배경 (웹 .gw-viewer) */
+const VIEWER_COLOR = "#131313";
 
 /** 메인 창 = 대화 목록 (닫으면 트레이로 숨김) */
 let win: BrowserWindow | null = null;
@@ -52,6 +58,8 @@ const roomWindows = new Map<number, BrowserWindow>();
 /** 시작 화면 (목록 창이 준비되면 닫는다) */
 let splash: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
+/** 첨부 미리보기 창 (하나만 두고, 다른 첨부를 열면 내용을 바꾼다) */
+let viewerWindow: BrowserWindow | null = null;
 /** 화면을 띄운 창 (웹의 준비 신호·대체 시간 중 먼저 온 쪽에서 한 번만 띄운다) */
 const revealed = new WeakSet<BrowserWindow>();
 let tray: Tray | null = null;
@@ -120,9 +128,9 @@ function openExternal(url: string) {
   if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
 }
 
-/** 메인·방 창 (웹 화면을 띄우는 창) */
+/** 메인·방·미리보기 창 (웹 화면을 띄우는 창) */
 function allWindows(): BrowserWindow[] {
-  return [win, ...roomWindows.values()].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
+  return [win, ...roomWindows.values(), viewerWindow].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
 }
 
 /** 제목 표시줄 없는 창의 공통 설정. 창 테두리·그림자·Windows 11 둥근 모서리·크기 조절은 유지된다 */
@@ -212,7 +220,10 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
     window.webContents.send(IPC.idle, idle);
     sendWindowState(window);
   });
-  window.on("focus", () => window.flashFrame(false));
+  // 창이 닫히는 도중에도 focus·blur가 올 수 있다 (이미 파괴된 창을 건드리면 메인 프로세스 오류)
+  window.on("focus", () => {
+    if (!window.isDestroyed()) window.flashFrame(false);
+  });
   const syncState = () => sendWindowState(window);
   window.on("maximize", syncState);
   window.on("unmaximize", syncState);
@@ -230,7 +241,8 @@ function windowState(window: BrowserWindow) {
 }
 
 function sendWindowState(window: BrowserWindow) {
-  if (!window.isDestroyed()) window.webContents.send(IPC.windowState, windowState(window));
+  if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+  window.webContents.send(IPC.windowState, windowState(window));
 }
 
 /** 시작 화면: 목록 창이 서버에서 화면을 받아 그릴 때까지 띄워 둔다 (빈 창·로딩 글자 대신) */
@@ -318,6 +330,63 @@ function openRoomWindow(roomId: number, seq?: number) {
   trackRoomWindowSize(room);
   setTimeout(() => reveal(room), ROOM_REVEAL_FALLBACK_MS);
   room.on("closed", () => roomWindows.delete(roomId));
+}
+
+/** 첨부 미리보기 창 열기. 이미 열려 있으면 그 창에 새 첨부를 띄운다. 마우스가 있는 화면 가운데에 연다 */
+function openViewerWindow(query: URLSearchParams) {
+  const url = viewerUrl(query);
+  // 창 제목 = 파일명 (웹은 페이지 제목을 "V WORKS"로 덮어쓰므로 여기서 고정한다)
+  const title = query.get("name") || APP_NAME;
+  if (viewerWindow && !viewerWindow.isDestroyed()) {
+    viewerWindow.setTitle(title);
+    void viewerWindow.loadURL(url);
+    showWindow(viewerWindow);
+    return;
+  }
+  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const saved = viewerWindowSize();
+  const width = Math.min(saved.width, area.width);
+  const height = Math.min(saved.height, area.height);
+  const viewer = createAppWindow(
+    {
+      width,
+      height,
+      x: Math.round(area.x + (area.width - width) / 2),
+      y: Math.round(area.y + (area.height - height) / 2),
+      minHeight: 320,
+      title,
+      backgroundColor: VIEWER_COLOR,
+    },
+    url,
+  );
+  viewerWindow = viewer;
+  viewer.on("page-title-updated", (event) => event.preventDefault());
+  trackViewerWindowSize(viewer);
+  setTimeout(() => reveal(viewer), ROOM_REVEAL_FALLBACK_MS);
+  viewer.on("closed", () => {
+    if (viewerWindow === viewer) viewerWindow = null;
+  });
+}
+
+/** 미리보기 창 요청 검증 → 창 주소 쿼리 */
+function viewerQuery(payload: unknown): URLSearchParams | null {
+  if (payload == null || typeof payload !== "object") return null;
+  const target = payload as Record<string, unknown>;
+  const roomId = Number(target.roomId);
+  const attachmentId = Number(target.attachmentId);
+  if (!Number.isInteger(roomId) || roomId <= 0 || !Number.isInteger(attachmentId) || attachmentId <= 0) return null;
+  const text = (value: unknown, max: number) => String(value ?? "").slice(0, max);
+  return new URLSearchParams({
+    room: String(roomId),
+    id: String(attachmentId),
+    name: text(target.fileName, 255),
+    ext: text(target.ext, 20),
+    mime: text(target.mime, 100),
+    size: String(Math.max(0, Number(target.sizeBytes) || 0)),
+    preview: target.previewable === true ? "1" : "0",
+    by: text(target.senderName, 100),
+    at: text(target.createdAt, 40),
+  });
 }
 
 /** 마지막으로 연 방 창(없으면 메인 창) 옆으로 비켜 놓는다 */
@@ -459,7 +528,7 @@ function registerIpc() {
     const room = roomWindows.get(payload.roomId);
     if (room && !room.isDestroyed() && room.isVisible() && room.isFocused()) return;
     if (room && !room.isDestroyed() && room.isVisible()) room.flashFrame(true);
-    else if (win && !win.isFocused()) win.flashFrame(true);
+    else if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true);
     const preferences = readPreferences();
     if (!preferences.notify || !Notification.isSupported()) return;
     const notification = new Notification({
@@ -499,6 +568,12 @@ function registerIpc() {
     const seq = typeof payload === "object" && Number.isInteger(payload?.seq) ? payload.seq : undefined;
     if (!Number.isInteger(roomId) || roomId <= 0) return;
     openRoomWindow(roomId, seq != null && seq > 0 ? seq : undefined);
+  });
+
+  ipcMain.on(IPC.openViewerWindow, (event, payload: unknown) => {
+    if (!fromApp(event)) return;
+    const query = viewerQuery(payload);
+    if (query) openViewerWindow(query);
   });
 
   ipcMain.handle(IPC.getVersion, (event) => (fromApp(event) || fromSettings(event) ? app.getVersion() : ""));

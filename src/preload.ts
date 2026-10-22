@@ -14,6 +14,7 @@ const IPC = {
   openRoom: "desktop:open-room",
   openRoomWindow: "desktop:open-room-window",
   jumpToMessage: "desktop:jump-to-message",
+  openViewerWindow: "desktop:open-viewer-window",
   appReady: "desktop:app-ready",
   openSettings: "desktop:open-settings",
   windowMinimize: "window:minimize",
@@ -58,6 +59,18 @@ contextBridge.exposeInMainWorld("desktop", {
   openRoomWindow: (roomId: number, seq?: number) =>
     ipcRenderer.send(IPC.openRoomWindow, { roomId: Number(roomId), seq: seq == null ? undefined : Number(seq) }),
   onJumpToMessage: (callback: (seq: number) => void) => subscribe<number>(IPC.jumpToMessage, callback),
+  openViewerWindow: (target: Record<string, unknown>) =>
+    ipcRenderer.send(IPC.openViewerWindow, {
+      roomId: Number(target.roomId),
+      attachmentId: Number(target.attachmentId),
+      fileName: String(target.fileName ?? "").slice(0, 255),
+      ext: String(target.ext ?? "").slice(0, 20),
+      mime: String(target.mime ?? "").slice(0, 100),
+      sizeBytes: Number(target.sizeBytes) || 0,
+      previewable: Boolean(target.previewable),
+      senderName: String(target.senderName ?? "").slice(0, 100),
+      createdAt: String(target.createdAt ?? "").slice(0, 40),
+    }),
   appReady: () => ipcRenderer.send(IPC.appReady),
   openSettings: () => ipcRenderer.send(IPC.openSettings),
   windowControls: {

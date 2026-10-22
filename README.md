@@ -13,6 +13,7 @@
 |---|---|---|
 | 메인(목록) | `/messenger` | 대화 목록만. 닫으면 트레이로 숨김. 알림·배지를 맡는다 |
 | 방 | `/messenger/rooms/{roomId}` | 방 하나. 목록에서 방을 누르거나 알림을 누르면 열린다. 이미 열려 있으면 앞으로. 닫으면 없어진다 |
+| 미리보기 (0.4.0+) | `/messenger/viewer?room=&id=&name=…` | 첨부 미리보기(이미지·PDF·텍스트·오피스·동영상). 하나만 두고 다른 첨부를 열면 내용을 바꾼다. 실시간 연결 없음. 창 제목 = 파일명 |
 
 - 방 창을 보고 있으면(포커스) 그 방 알림은 띄우지 않고, 보이기만 하면 그 창을 깜빡인다.
 - 방 창 크기는 마지막으로 조절한 크기를 다음 방 창도 쓴다. 새 방 창은 메인 창 옆·이전 방 창 대각선 아래에 연다.
@@ -58,6 +59,7 @@
 | `onOpenRoom(cb)` | 알림 클릭 시 방 ID — 0.1.0 호환용 (0.2.0은 방 창을 직접 연다) |
 | `appReady()` | 화면이 그려졌음을 알림 → 창을 띄운다 — 0.4.0+ |
 | `openSettings()` | 설정 창 열기 — 0.4.0+ |
+| `openViewerWindow(target)` | 첨부 미리보기 창 열기 (첨부 정보를 창 주소 쿼리로) — 0.4.0+. 없으면 웹이 대화 화면 위에 띄운다 |
 | `windowControls` | `minimize`·`toggleMaximize`·`close`·`setPinned`·`getState`·`onStateChange` (웹 상단바용) — 0.4.0+ |
 | `settings` | 설정 창 전용 (`get`·`set`·`checkUpdate`·`installUpdate`). 다른 화면에서 부르면 무시 |
 
