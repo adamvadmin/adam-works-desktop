@@ -35,7 +35,17 @@ body {
 
 button {
   font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
   cursor: default;
+}
+
+/* 설정 스위치처럼 누를 수 있는 줄 */
+label:has(input),
+label:has(input) input {
+  cursor: pointer;
 }
 
 ::-webkit-scrollbar {
