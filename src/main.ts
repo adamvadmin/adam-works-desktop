@@ -26,6 +26,8 @@ import {
   IPC,
   MAIN_REVEAL_FALLBACK_MS,
   NEW_ROOM_URL,
+  inviteUrl,
+  roomInfoUrl,
   RELOAD_RETRY_MS,
   ROOM_REVEAL_FALLBACK_MS,
   ROOM_WINDOW_CASCADE_PX,
@@ -68,8 +70,14 @@ let splash: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 /** 첨부 미리보기 창 (하나만 두고, 다른 첨부를 열면 내용을 바꾼다) */
 let viewerWindow: BrowserWindow | null = null;
-/** 새 대화 창 (하나만) */
-let newRoomWindow: BrowserWindow | null = null;
+/** 도구 창: 새 대화·방 정보·초대 (종류마다 하나, 다른 방이면 내용을 바꾼다) */
+type ToolKind = "new-room" | "room-info" | "invite";
+const toolWindows = new Map<ToolKind, BrowserWindow>();
+const TOOL_SIZES: Record<ToolKind, { width: number; height: number }> = {
+  "new-room": { width: 420, height: 640 },
+  "room-info": { width: 400, height: 620 },
+  invite: { width: 420, height: 640 },
+};
 /** 화면을 띄운 창 (웹의 준비 신호·대체 시간 중 먼저 온 쪽에서 한 번만 띄운다) */
 const revealed = new WeakSet<BrowserWindow>();
 let tray: Tray | null = null;
@@ -178,7 +186,7 @@ function openExternal(url: string) {
 
 /** 메인·방·미리보기 창 (웹 화면을 띄우는 창) */
 function allWindows(): BrowserWindow[] {
-  return [win, ...roomWindows.values(), viewerWindow, newRoomWindow].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
+  return [win, ...roomWindows.values(), viewerWindow, ...toolWindows.values()].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
 }
 
 /** 제목 표시줄 없는 창의 공통 설정. 창 테두리·그림자·Windows 11 둥근 모서리·크기 조절은 유지된다 */
@@ -256,6 +264,12 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
     if (input.code === "KeyW" && !input.shift && !input.alt) {
       event.preventDefault();
       window.close();
+    } else if (input.code === "KeyN" && !input.shift && !input.alt) {
+      event.preventDefault();
+      openNewRoomWindow();
+    } else if (input.code === "Tab" && !input.alt) {
+      event.preventDefault();
+      focusNextChatWindow(window, input.shift);
     } else if (input.code === "KeyI" && input.shift && !app.isPackaged) {
       event.preventDefault();
       window.webContents.toggleDevTools();
@@ -428,26 +442,46 @@ function openViewerWindow(query: URLSearchParams) {
   });
 }
 
-/** 새 대화 창 열기 (이미 열려 있으면 앞으로). 목록 창 가운데 위에 연다 */
-function openNewRoomWindow() {
-  if (newRoomWindow && !newRoomWindow.isDestroyed()) {
-    showWindow(newRoomWindow);
+/**
+ * 도구 창 열기 (새 대화·방 정보·초대). 종류마다 하나만 두고, 이미 열려 있으면 앞으로(주소가 다르면 바꾼다).
+ * 요청한 창(없으면 목록 창) 가운데 위에 연다.
+ */
+function openToolWindow(kind: ToolKind, url: string, near?: BrowserWindow | null) {
+  const existing = toolWindows.get(kind);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.webContents.getURL() !== url) void existing.loadURL(url);
+    showWindow(existing);
     return;
   }
-  const width = 420;
-  const height = 640;
+  const { width, height } = TOOL_SIZES[kind];
   const position: { x?: number; y?: number } = {};
-  if (win && !win.isDestroyed() && win.isVisible()) {
-    const bounds = win.getBounds();
+  const anchor = near && !near.isDestroyed() && near.isVisible() ? near : win;
+  if (anchor && !anchor.isDestroyed() && anchor.isVisible()) {
+    const bounds = anchor.getBounds();
     position.x = Math.round(bounds.x + (bounds.width - width) / 2);
     position.y = Math.round(bounds.y + Math.max(0, (bounds.height - height) / 2));
   }
-  const window = createAppWindow({ width, height, ...position, minHeight: 480, title: APP_NAME }, NEW_ROOM_URL);
-  newRoomWindow = window;
+  const window = createAppWindow({ width, height, ...position, minHeight: 480, title: APP_NAME }, url);
+  toolWindows.set(kind, window);
   setTimeout(() => reveal(window), ROOM_REVEAL_FALLBACK_MS);
   window.on("closed", () => {
-    if (newRoomWindow === window) newRoomWindow = null;
+    if (toolWindows.get(kind) === window) toolWindows.delete(kind);
   });
+}
+
+function openNewRoomWindow() {
+  openToolWindow("new-room", NEW_ROOM_URL);
+}
+
+/** Ctrl+Tab: 목록·방 창 사이를 차례로 옮겨 다닌다 (Shift면 거꾸로) */
+function focusNextChatWindow(from: BrowserWindow, backward: boolean) {
+  const order = [win, ...roomWindows.values()].filter(
+    (w): w is BrowserWindow => w != null && !w.isDestroyed() && w.isVisible(),
+  );
+  if (order.length < 2) return;
+  const index = order.indexOf(from);
+  const next = order[(index + (backward ? -1 : 1) + order.length) % order.length];
+  showWindow(next);
 }
 
 /** 미리보기 창 요청 검증 → 창 주소 쿼리 */
@@ -532,12 +566,12 @@ function showWindow(window: BrowserWindow | null | undefined) {
   window.focus();
 }
 
-/** 작업표시줄 오버레이(빨간 점)·트레이 아이콘·툴팁 */
+/** 작업표시줄 오버레이(안 읽음 숫자, 10 이상은 9+)·트레이 아이콘·툴팁 */
 function setBadge(count: number) {
   unreadCount = count;
   if (win && !win.isDestroyed()) {
     win.setOverlayIcon(
-      count > 0 ? nativeImage.createFromPath(iconPath("overlay.png")) : null,
+      count > 0 ? nativeImage.createFromPath(iconPath(count > 9 ? "overlay-9plus.png" : `overlay-${count}.png`)) : null,
       count > 0 ? `안 읽은 메시지 ${count}` : "",
     );
   }
@@ -660,6 +694,16 @@ function registerIpc() {
 
   ipcMain.on(IPC.openNewRoomWindow, (event) => {
     if (fromApp(event)) openNewRoomWindow();
+  });
+
+  ipcMain.on(IPC.openRoomInfoWindow, (event, roomId: unknown) => {
+    if (!fromApp(event) || !Number.isInteger(roomId) || (roomId as number) <= 0) return;
+    openToolWindow("room-info", roomInfoUrl(roomId as number), BrowserWindow.fromWebContents(event.sender));
+  });
+
+  ipcMain.on(IPC.openInviteWindow, (event, roomId: unknown) => {
+    if (!fromApp(event) || !Number.isInteger(roomId) || (roomId as number) <= 0) return;
+    openToolWindow("invite", inviteUrl(roomId as number), BrowserWindow.fromWebContents(event.sender));
   });
 
   ipcMain.on(IPC.openViewerWindow, (event, payload: unknown) => {

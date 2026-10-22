@@ -17,6 +17,16 @@ export function roomUrl(roomId: number, seq?: number): string {
 /** 새 대화 창 주소 */
 export const NEW_ROOM_URL = `${APP_ORIGIN}/messenger/new`;
 
+/** 방 정보 창 주소 */
+export function roomInfoUrl(roomId: number): string {
+  return `${APP_ORIGIN}/messenger/info/${roomId}`;
+}
+
+/** 초대 창 주소 */
+export function inviteUrl(roomId: number): string {
+  return `${APP_ORIGIN}/messenger/invite/${roomId}`;
+}
+
 /** 첨부 미리보기 창 주소 (첨부 정보는 쿼리로 넘긴다. 파일은 화면이 로그인 정보로 받는다) */
 export function viewerUrl(query: URLSearchParams): string {
   return `${APP_ORIGIN}/messenger/viewer?${query.toString()}`;
@@ -54,6 +64,8 @@ export const IPC = {
   jumpToMessage: "desktop:jump-to-message",
   openViewerWindow: "desktop:open-viewer-window",
   openNewRoomWindow: "desktop:open-new-room-window",
+  openRoomInfoWindow: "desktop:open-room-info-window",
+  openInviteWindow: "desktop:open-invite-window",
   appReady: "desktop:app-ready",
   openSettings: "desktop:open-settings",
   windowMinimize: "window:minimize",

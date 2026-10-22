@@ -16,6 +16,8 @@ const IPC = {
   jumpToMessage: "desktop:jump-to-message",
   openViewerWindow: "desktop:open-viewer-window",
   openNewRoomWindow: "desktop:open-new-room-window",
+  openRoomInfoWindow: "desktop:open-room-info-window",
+  openInviteWindow: "desktop:open-invite-window",
   appReady: "desktop:app-ready",
   openSettings: "desktop:open-settings",
   windowMinimize: "window:minimize",
@@ -73,6 +75,8 @@ contextBridge.exposeInMainWorld("desktop", {
       createdAt: String(target.createdAt ?? "").slice(0, 40),
     }),
   openNewRoomWindow: () => ipcRenderer.send(IPC.openNewRoomWindow),
+  openRoomInfoWindow: (roomId: number) => ipcRenderer.send(IPC.openRoomInfoWindow, Number(roomId)),
+  openInviteWindow: (roomId: number) => ipcRenderer.send(IPC.openInviteWindow, Number(roomId)),
   appReady: () => ipcRenderer.send(IPC.appReady),
   openSettings: () => ipcRenderer.send(IPC.openSettings),
   windowControls: {

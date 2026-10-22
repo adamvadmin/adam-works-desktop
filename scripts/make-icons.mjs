@@ -4,11 +4,11 @@
  * - build/icons/icon.ico      256·48·32·16px (개발 실행 바로가기 아이콘)
  * - build/icons/tray.png      32px 트레이 아이콘
  * - build/icons/tray-unread.png 32px 트레이 아이콘 + 안 읽음 점
- * - build/icons/overlay.png   32px 작업표시줄 안 읽음 오버레이 (빨간 점)
+ * - build/icons/overlay-1.png … overlay-9.png, overlay-9plus.png  32px 작업표시줄 안 읽음 숫자 (빨간 원)
  * - build/installer/sidebar.bmp 164x314 설치 화면 시작·마침 페이지 왼쪽 그림
  * - build/installer/header.bmp  150x57 설치 진행 페이지 머리 그림
  *
- * 디자인: 브랜드 빨강(#e8261a) 둥근 사각형 위 흰 말풍선
+ * 디자인: 브랜드 빨강(#e8261a) 둥근 사각형 위 큰 흰 말풍선, 말풍선 안에 빨간 V
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -84,21 +84,69 @@ function inTriangle(x, y, [ax, ay], [bx, by], [cx, cy]) {
   return !(neg && pos);
 }
 
+/** 점 (x, y)에서 선분 a-b까지 거리가 굵기의 절반 이내인지 (끝이 둥근 획) */
+function inStroke(x, y, [ax, ay], [bx, by], width) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
+  return (x - (ax + t * dx)) ** 2 + (y - (ay + t * dy)) ** 2 <= (width / 2) ** 2;
+}
+
+/** 말풍선과 그 안의 V (0..1 좌표). "v" | "bubble" | null */
+function bubbleMark(x, y) {
+  const bubble =
+    inRoundRect(x, y, 0.14, 0.17, 0.86, 0.71, 0.17) || inTriangle(x, y, [0.25, 0.62], [0.47, 0.62], [0.2, 0.86]);
+  if (!bubble) return null;
+  const V_WIDTH = 0.095;
+  const v = inStroke(x, y, [0.355, 0.3], [0.5, 0.575], V_WIDTH) || inStroke(x, y, [0.645, 0.3], [0.5, 0.575], V_WIDTH);
+  return v ? "v" : "bubble";
+}
+
 /** 픽셀 색 결정 (위에서부터 덮어쓴다). null이면 투명 */
 function appIconColor(x, y, withDot) {
   if (withDot && inCircle(x, y, 0.8, 0.2, 0.2)) return DOT;
   if (withDot && inCircle(x, y, 0.8, 0.2, 0.26)) return null; // 점 둘레 투명 테두리
-  const bubble =
-    inRoundRect(x, y, 0.2, 0.24, 0.8, 0.66, 0.12) || inTriangle(x, y, [0.3, 0.6], [0.48, 0.6], [0.28, 0.8]);
-  if (bubble) return WHITE;
+  const mark = bubbleMark(x, y);
+  if (mark === "bubble") return WHITE;
   if (inRoundRect(x, y, 0.04, 0.04, 0.96, 0.96, 0.22)) return BRAND;
   return null;
 }
 
-function overlayColor(x, y) {
-  if (inCircle(x, y, 0.5, 0.5, 0.42)) return DOT;
-  if (inCircle(x, y, 0.5, 0.5, 0.5)) return WHITE;
-  return null;
+/** 작업표시줄 숫자용 3x5 픽셀 글꼴 (16px로 줄어도 또렷하게) */
+const GLYPHS = {
+  1: ["010", "110", "010", "010", "111"],
+  2: ["111", "001", "111", "100", "111"],
+  3: ["111", "001", "111", "001", "111"],
+  4: ["101", "101", "111", "001", "001"],
+  5: ["111", "100", "111", "001", "111"],
+  6: ["111", "100", "111", "101", "111"],
+  7: ["111", "001", "001", "010", "010"],
+  8: ["111", "101", "111", "101", "111"],
+  9: ["111", "101", "111", "001", "111"],
+  "+": ["000", "010", "111", "010", "000"],
+};
+
+/** 글자들을 가운데 놓았을 때 (x, y)가 글자 칸 안인지. unit = 한 칸 크기 (0..1 좌표) */
+function inText(x, y, text, unit) {
+  const width = text.length * 3 + (text.length - 1);
+  const left = 0.5 - (width * unit) / 2;
+  const top = 0.5 - (5 * unit) / 2;
+  const col = Math.floor((x - left) / unit);
+  const row = Math.floor((y - top) / unit);
+  if (row < 0 || row >= 5 || col < 0 || col >= width) return false;
+  const index = Math.floor(col / 4);
+  const inner = col % 4;
+  return inner < 3 && GLYPHS[text[index]][row][inner] === "1";
+}
+
+/** 빨간 원(흰 테두리) 안에 흰 숫자 */
+function overlayNumberColor(text) {
+  const unit = text.length === 1 ? 0.12 : 0.085;
+  return (x, y) => {
+    if (inCircle(x, y, 0.5, 0.5, 0.44)) return inText(x, y, text, unit) ? WHITE : DOT;
+    if (inCircle(x, y, 0.5, 0.5, 0.5)) return WHITE;
+    return null;
+  };
 }
 
 function render(size, colorAt) {
@@ -192,13 +240,11 @@ function withIcon(left, top, size, background) {
   return (x, y) => appIconColor((x - left) / size, (y - top) / size, false) ?? background(x, y);
 }
 
-/** 시작·마침 페이지 왼쪽: 브랜드 빨강 세로 그라데이션 위 흰 말풍선 */
+/** 시작·마침 페이지 왼쪽: 브랜드 빨강 세로 그라데이션 위 흰 말풍선(V) */
 function sidebarColor(x, y) {
-  const u = (x - 22) / 120;
-  const v = (y - 70) / 120;
-  const bubble =
-    inRoundRect(u, v, 0.2, 0.24, 0.8, 0.66, 0.12) || inTriangle(u, v, [0.3, 0.6], [0.48, 0.6], [0.28, 0.8]);
-  return bubble ? WHITE : mix(BRAND, BRAND_DARK, y / 314);
+  const background = mix(BRAND, BRAND_DARK, y / 314);
+  const mark = bubbleMark((x - 22) / 120, (y - 70) / 120);
+  return mark === "bubble" ? WHITE : background;
 }
 
 fs.mkdirSync(OUT, { recursive: true });
@@ -209,5 +255,8 @@ fs.writeFileSync(path.join(OUT, "icon.png"), render(256, (x, y) => appIconColor(
 fs.writeFileSync(path.join(OUT, "icon.ico"), encodeIco([256, 48, 32, 16].map((size) => [size, render(size, (x, y) => appIconColor(x, y, false))])));
 fs.writeFileSync(path.join(OUT, "tray.png"), render(32, (x, y) => appIconColor(x, y, false)));
 fs.writeFileSync(path.join(OUT, "tray-unread.png"), render(32, (x, y) => appIconColor(x, y, true)));
-fs.writeFileSync(path.join(OUT, "overlay.png"), render(32, overlayColor));
+for (let n = 1; n <= 9; n++) {
+  fs.writeFileSync(path.join(OUT, `overlay-${n}.png`), render(32, overlayNumberColor(String(n))));
+}
+fs.writeFileSync(path.join(OUT, "overlay-9plus.png"), render(32, overlayNumberColor("9+")));
 console.log(`아이콘 생성: ${OUT}`);
