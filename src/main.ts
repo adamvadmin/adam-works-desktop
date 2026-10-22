@@ -23,6 +23,7 @@ import {
   IDLE_THRESHOLD_SECONDS,
   IPC,
   MAIN_REVEAL_FALLBACK_MS,
+  NEW_ROOM_URL,
   RELOAD_RETRY_MS,
   ROOM_REVEAL_FALLBACK_MS,
   ROOM_WINDOW_CASCADE_PX,
@@ -60,6 +61,8 @@ let splash: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 /** 첨부 미리보기 창 (하나만 두고, 다른 첨부를 열면 내용을 바꾼다) */
 let viewerWindow: BrowserWindow | null = null;
+/** 새 대화 창 (하나만) */
+let newRoomWindow: BrowserWindow | null = null;
 /** 화면을 띄운 창 (웹의 준비 신호·대체 시간 중 먼저 온 쪽에서 한 번만 띄운다) */
 const revealed = new WeakSet<BrowserWindow>();
 let tray: Tray | null = null;
@@ -130,7 +133,7 @@ function openExternal(url: string) {
 
 /** 메인·방·미리보기 창 (웹 화면을 띄우는 창) */
 function allWindows(): BrowserWindow[] {
-  return [win, ...roomWindows.values(), viewerWindow].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
+  return [win, ...roomWindows.values(), viewerWindow, newRoomWindow].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
 }
 
 /** 제목 표시줄 없는 창의 공통 설정. 창 테두리·그림자·Windows 11 둥근 모서리·크기 조절은 유지된다 */
@@ -377,6 +380,28 @@ function openViewerWindow(query: URLSearchParams) {
   });
 }
 
+/** 새 대화 창 열기 (이미 열려 있으면 앞으로). 목록 창 가운데 위에 연다 */
+function openNewRoomWindow() {
+  if (newRoomWindow && !newRoomWindow.isDestroyed()) {
+    showWindow(newRoomWindow);
+    return;
+  }
+  const width = 420;
+  const height = 640;
+  const position: { x?: number; y?: number } = {};
+  if (win && !win.isDestroyed() && win.isVisible()) {
+    const bounds = win.getBounds();
+    position.x = Math.round(bounds.x + (bounds.width - width) / 2);
+    position.y = Math.round(bounds.y + Math.max(0, (bounds.height - height) / 2));
+  }
+  const window = createAppWindow({ width, height, ...position, minHeight: 480, title: APP_NAME }, NEW_ROOM_URL);
+  newRoomWindow = window;
+  setTimeout(() => reveal(window), ROOM_REVEAL_FALLBACK_MS);
+  window.on("closed", () => {
+    if (newRoomWindow === window) newRoomWindow = null;
+  });
+}
+
 /** 미리보기 창 요청 검증 → 창 주소 쿼리 */
 function viewerQuery(payload: unknown): URLSearchParams | null {
   if (payload == null || typeof payload !== "object") return null;
@@ -583,6 +608,10 @@ function registerIpc() {
     const seq = typeof payload === "object" && Number.isInteger(payload?.seq) ? payload.seq : undefined;
     if (!Number.isInteger(roomId) || roomId <= 0) return;
     openRoomWindow(roomId, seq != null && seq > 0 ? seq : undefined);
+  });
+
+  ipcMain.on(IPC.openNewRoomWindow, (event) => {
+    if (fromApp(event)) openNewRoomWindow();
   });
 
   ipcMain.on(IPC.openViewerWindow, (event, payload: unknown) => {

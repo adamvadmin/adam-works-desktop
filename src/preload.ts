@@ -15,6 +15,7 @@ const IPC = {
   openRoomWindow: "desktop:open-room-window",
   jumpToMessage: "desktop:jump-to-message",
   openViewerWindow: "desktop:open-viewer-window",
+  openNewRoomWindow: "desktop:open-new-room-window",
   appReady: "desktop:app-ready",
   openSettings: "desktop:open-settings",
   windowMinimize: "window:minimize",
@@ -71,6 +72,7 @@ contextBridge.exposeInMainWorld("desktop", {
       senderName: String(target.senderName ?? "").slice(0, 100),
       createdAt: String(target.createdAt ?? "").slice(0, 40),
     }),
+  openNewRoomWindow: () => ipcRenderer.send(IPC.openNewRoomWindow),
   appReady: () => ipcRenderer.send(IPC.appReady),
   openSettings: () => ipcRenderer.send(IPC.openSettings),
   windowControls: {
