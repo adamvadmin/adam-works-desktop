@@ -8,7 +8,7 @@
  * - build/installer/sidebar.bmp 164x314 설치 화면 시작·마침 페이지 왼쪽 그림
  * - build/installer/header.bmp  150x57 설치 진행 페이지 머리 그림
  *
- * 디자인: 브랜드 빨강(#e8261a) 둥근 사각형 위 큰 흰 말풍선, 말풍선 안에 빨간 V
+ * 디자인: 배경 없이 브랜드 빨강(#e8261a) 말풍선(꼬리는 왼쪽 아래), 그 안에 굵은 흰 V
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -95,20 +95,21 @@ function inStroke(x, y, [ax, ay], [bx, by], width) {
 /** 말풍선과 그 안의 V (0..1 좌표). "v" | "bubble" | null */
 function bubbleMark(x, y) {
   const bubble =
-    inRoundRect(x, y, 0.14, 0.17, 0.86, 0.71, 0.17) || inTriangle(x, y, [0.25, 0.62], [0.47, 0.62], [0.2, 0.86]);
+    inRoundRect(x, y, 0.04, 0.1, 0.96, 0.74, 0.16) || inTriangle(x, y, [0.14, 0.68], [0.46, 0.72], [0.15, 0.96]);
   if (!bubble) return null;
-  const V_WIDTH = 0.095;
-  const v = inStroke(x, y, [0.355, 0.3], [0.5, 0.575], V_WIDTH) || inStroke(x, y, [0.645, 0.3], [0.5, 0.575], V_WIDTH);
+  const V_WIDTH = 0.13;
+  const v = inStroke(x, y, [0.32, 0.25], [0.5, 0.58], V_WIDTH) || inStroke(x, y, [0.68, 0.25], [0.5, 0.58], V_WIDTH);
   return v ? "v" : "bubble";
 }
 
 /** 픽셀 색 결정 (위에서부터 덮어쓴다). null이면 투명 */
 function appIconColor(x, y, withDot) {
-  if (withDot && inCircle(x, y, 0.8, 0.2, 0.2)) return DOT;
-  if (withDot && inCircle(x, y, 0.8, 0.2, 0.26)) return null; // 점 둘레 투명 테두리
+  // 안 읽음 점: 빨간 말풍선 위라 흰 테두리로 구분
+  if (withDot && inCircle(x, y, 0.84, 0.16, 0.16)) return DOT;
+  if (withDot && inCircle(x, y, 0.84, 0.16, 0.23)) return WHITE;
   const mark = bubbleMark(x, y);
-  if (mark === "bubble") return WHITE;
-  if (inRoundRect(x, y, 0.04, 0.04, 0.96, 0.96, 0.22)) return BRAND;
+  if (mark === "v") return WHITE;
+  if (mark === "bubble") return BRAND;
   return null;
 }
 
@@ -240,7 +241,7 @@ function withIcon(left, top, size, background) {
   return (x, y) => appIconColor((x - left) / size, (y - top) / size, false) ?? background(x, y);
 }
 
-/** 시작·마침 페이지 왼쪽: 브랜드 빨강 세로 그라데이션 위 흰 말풍선(V) */
+/** 시작·마침 페이지 왼쪽: 브랜드 빨강 세로 그라데이션 위 흰 말풍선에 빨간 V (빨간 배경에서는 색을 뒤집는다) */
 function sidebarColor(x, y) {
   const background = mix(BRAND, BRAND_DARK, y / 314);
   const mark = bubbleMark((x - 22) / 120, (y - 70) / 120);
