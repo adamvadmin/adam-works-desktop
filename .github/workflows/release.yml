@@ -32,3 +32,18 @@ jobs:
       - run: npm run release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 불변 릴리스: 공개 후에는 파일을 올릴 수 없어 초안에 다 올린 뒤 공개한다 (공개 순간 잠긴다)
+      - name: 초안 릴리스 공개
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/releases"
+          ID=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "$API?per_page=20" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s).find(x=>x.tag_name===process.env.GITHUB_REF_NAME&&x.draft);if(!r){process.exit(1)}console.log(r.id)})")
+          ASSETS=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "$API/$ID/assets" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).map(a=>a.name).join(' ')))")
+          echo "assets: $ASSETS"
+          for f in latest.yml ".exe" ".blockmap"; do
+            echo "$ASSETS" | grep -q -- "$f" || { echo "missing asset: $f" >&2; exit 1; }
+          done
+          curl -fsS -X PATCH -H "Authorization: Bearer $GH_TOKEN" "$API/$ID" -d '{"draft":false,"make_latest":"true"}' > /dev/null
+          echo "published release $ID"

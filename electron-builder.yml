@@ -41,8 +41,10 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: V WORKS 메신저
+# 저장소가 불변 릴리스(immutable releases)라 공개된 릴리스에는 파일을 올릴 수 없다.
+# 초안(draft)에 올리고 release.yml 마지막 단계에서 공개한다
 publish:
   provider: github
   owner: adamvadmin
   repo: adam-works-desktop
-  releaseType: release
+  releaseType: draft
