@@ -8,7 +8,7 @@
  * - build/installer/sidebar.bmp 164x314 설치 화면 시작·마침 페이지 왼쪽 그림
  * - build/installer/header.bmp  150x57 설치 진행 페이지 머리 그림
  *
- * 디자인: 배경 없이 브랜드 빨강(#e8261a) 말풍선(꼬리는 왼쪽 아래), 그 안에 굵은 흰 V
+ * 디자인: 살짝 둥근 브랜드 빨강(#e8261a) 정사각형, 가운데 굵은 흰 V (끝이 평평한 기하 도형)
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -74,42 +74,42 @@ function inCircle(x, y, cx, cy, r) {
   return (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
 }
 
-function inTriangle(x, y, [ax, ay], [bx, by], [cx, cy]) {
-  const s = (p1x, p1y, p2x, p2y, p3x, p3y) => (p1x - p3x) * (p2y - p3y) - (p2x - p3x) * (p1y - p3y);
-  const d1 = s(x, y, ax, ay, bx, by);
-  const d2 = s(x, y, bx, by, cx, cy);
-  const d3 = s(x, y, cx, cy, ax, ay);
-  const neg = d1 < 0 || d2 < 0 || d3 < 0;
-  const pos = d1 > 0 || d2 > 0 || d3 > 0;
-  return !(neg && pos);
+/** 점이 다각형 안인지 (짝홀 규칙) */
+function inPolygon(x, y, points) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const [xi, yi] = points[i];
+    const [xj, yj] = points[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
-/** 점 (x, y)에서 선분 a-b까지 거리가 굵기의 절반 이내인지 (끝이 둥근 획) */
-function inStroke(x, y, [ax, ay], [bx, by], width) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
-  return (x - (ax + t * dx)) ** 2 + (y - (ay + t * dy)) ** 2 <= (width / 2) ** 2;
-}
+/** 굵은 V (위 끝은 평평, 아래는 좁게 모인다). 가운데 정렬 */
+const V_SHAPE = [
+  [0.255, 0.28],
+  [0.39, 0.28],
+  [0.5, 0.575],
+  [0.61, 0.28],
+  [0.745, 0.28],
+  [0.567, 0.735],
+  [0.433, 0.735],
+];
 
-/** 말풍선과 그 안의 V (0..1 좌표). "v" | "bubble" | null */
-function bubbleMark(x, y) {
-  const bubble =
-    inRoundRect(x, y, 0.04, 0.1, 0.96, 0.74, 0.16) || inTriangle(x, y, [0.14, 0.68], [0.46, 0.72], [0.15, 0.96]);
-  if (!bubble) return null;
-  const V_WIDTH = 0.13;
-  const v = inStroke(x, y, [0.32, 0.25], [0.5, 0.58], V_WIDTH) || inStroke(x, y, [0.68, 0.25], [0.5, 0.58], V_WIDTH);
-  return v ? "v" : "bubble";
+/** 둥근 정사각형과 그 안의 V (0..1 좌표). "v" | "tile" | null */
+function tileMark(x, y) {
+  if (!inRoundRect(x, y, 0.03, 0.03, 0.97, 0.97, 0.19)) return null;
+  return inPolygon(x, y, V_SHAPE) ? "v" : "tile";
 }
 
 /** 픽셀 색 결정 (위에서부터 덮어쓴다). null이면 투명 */
 function appIconColor(x, y, withDot) {
-  // 안 읽음 점: 빨간 말풍선 위라 흰 테두리로 구분
-  if (withDot && inCircle(x, y, 0.84, 0.16, 0.16)) return DOT;
-  if (withDot && inCircle(x, y, 0.84, 0.16, 0.23)) return WHITE;
-  const mark = bubbleMark(x, y);
+  // 안 읽음 점: 빨간 바탕 위라 흰 테두리로 구분
+  if (withDot && inCircle(x, y, 0.82, 0.18, 0.17)) return DOT;
+  if (withDot && inCircle(x, y, 0.82, 0.18, 0.24)) return WHITE;
+  const mark = tileMark(x, y);
   if (mark === "v") return WHITE;
-  if (mark === "bubble") return BRAND;
+  if (mark === "tile") return BRAND;
   return null;
 }
 
@@ -241,11 +241,11 @@ function withIcon(left, top, size, background) {
   return (x, y) => appIconColor((x - left) / size, (y - top) / size, false) ?? background(x, y);
 }
 
-/** 시작·마침 페이지 왼쪽: 브랜드 빨강 세로 그라데이션 위 흰 말풍선에 빨간 V (빨간 배경에서는 색을 뒤집는다) */
+/** 시작·마침 페이지 왼쪽: 브랜드 빨강 세로 그라데이션 위 흰 타일에 빨간 V (빨간 배경에서는 색을 뒤집는다) */
 function sidebarColor(x, y) {
   const background = mix(BRAND, BRAND_DARK, y / 314);
-  const mark = bubbleMark((x - 22) / 120, (y - 70) / 120);
-  return mark === "bubble" ? WHITE : background;
+  const mark = tileMark((x - 32) / 100, (y - 80) / 100);
+  return mark === "tile" ? WHITE : background;
 }
 
 fs.mkdirSync(OUT, { recursive: true });
