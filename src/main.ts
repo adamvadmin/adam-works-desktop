@@ -295,6 +295,15 @@ function createMainWindow() {
   const main = win;
   setTimeout(() => reveal(main), MAIN_REVEAL_FALLBACK_MS);
 
+  // 목록 창이 로그인 화면으로 가면(로그아웃·세션 만료) 방·미리보기 창을 닫는다
+  const closeOthersOnLogin = (_event: unknown, url: string) => {
+    if (!isAppUrl(url) || !new URL(url).pathname.startsWith("/login")) return;
+    for (const window of allWindows()) if (window !== main) window.close();
+    setBadge(0);
+  };
+  win.webContents.on("did-navigate", closeOthersOnLogin);
+  win.webContents.on("did-navigate-in-page", closeOthersOnLogin);
+
   // 닫기 = 트레이로 숨김 (설정에서 "닫으면 종료"를 고르면 종료)
   win.on("close", (event) => {
     if (quitting) return;
@@ -450,6 +459,18 @@ function showWindow(window: BrowserWindow | null | undefined) {
   window.focus();
 }
 
+/** 작업표시줄 오버레이(빨간 점)·트레이 아이콘·툴팁 */
+function setBadge(count: number) {
+  unreadCount = count;
+  if (win && !win.isDestroyed()) {
+    win.setOverlayIcon(
+      count > 0 ? nativeImage.createFromPath(iconPath("overlay.png")) : null,
+      count > 0 ? `안 읽은 메시지 ${count}` : "",
+    );
+  }
+  refreshTray();
+}
+
 function createTray() {
   tray = new Tray(nativeImage.createFromPath(iconPath("tray.png")));
   tray.on("click", () => showWindow(win));
@@ -546,13 +567,7 @@ function registerIpc() {
   });
 
   ipcMain.on(IPC.setBadge, (event, count: number) => {
-    if (!fromMainWindow(event) || !win) return;
-    unreadCount = count;
-    win.setOverlayIcon(
-      count > 0 ? nativeImage.createFromPath(iconPath("overlay.png")) : null,
-      count > 0 ? `안 읽은 메시지 ${count}` : "",
-    );
-    refreshTray();
+    if (fromMainWindow(event)) setBadge(count);
   });
 
   ipcMain.on(IPC.flashFrame, (event) => {
