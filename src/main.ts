@@ -15,6 +15,7 @@ import {
   type IpcMainInvokeEvent,
 } from "electron";
 import { autoUpdater } from "electron-updater";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -31,6 +32,7 @@ import {
   RELOAD_RETRY_MS,
   ROOM_REVEAL_FALLBACK_MS,
   ROOM_WINDOW_CASCADE_PX,
+  UNSAFE_OPEN_EXTENSIONS,
   UPDATE_CHECK_MS,
   iconPath,
   pagePath,
@@ -123,6 +125,7 @@ function start() {
   app.userAgentFallback = asciiUserAgent();
   Menu.setApplicationMenu(null);
   restrictPermissions();
+  watchDownloads();
   if (isDevTarget && !app.isPackaged) ensureDevShortcut();
   if (!startHidden) createSplash();
   createMainWindow();
@@ -166,6 +169,37 @@ function restrictPermissions() {
   session.defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
     allowed(permission, requestingOrigin),
   );
+}
+
+/** 저장을 마친 파일 (웹에는 경로 대신 id만 넘긴다) */
+const savedDownloads = new Map<string, string>();
+
+/**
+ * 웹 화면의 파일 저장을 지켜보다가 끝나면 그 창에 알린다. 저장 위치는 지금처럼 사용자가 고른다.
+ * 웹은 이 알림으로 "열기"·"폴더에서 보기" 버튼을 띄운다
+ */
+function watchDownloads() {
+  session.defaultSession.on("will-download", (_event, item, contents) => {
+    item.once("done", (_doneEvent, state) => {
+      if (contents.isDestroyed() || !isAppUrl(contents.getURL())) return;
+      const fileName = item.getFilename();
+      const savePath = item.getSavePath();
+      if (state !== "completed" || !savePath) {
+        contents.send(IPC.downloadDone, { fileName, id: null, state });
+        return;
+      }
+      const id = randomUUID();
+      savedDownloads.set(id, savePath);
+      const ext = path.extname(savePath).toLowerCase();
+      contents.send(IPC.downloadDone, {
+        fileName,
+        id,
+        state,
+        savedName: path.basename(savePath),
+        canOpen: !UNSAFE_OPEN_EXTENSIONS.has(ext),
+      });
+    });
+  });
 }
 
 function isAppUrl(url: string) {
@@ -710,6 +744,22 @@ function registerIpc() {
     if (!fromApp(event)) return;
     const query = viewerQuery(payload);
     if (query) openViewerWindow(query);
+  });
+
+  ipcMain.handle(IPC.downloadOpen, async (event, id: unknown) => {
+    const savePath = fromApp(event) && typeof id === "string" ? savedDownloads.get(id) : undefined;
+    if (!savePath || !fs.existsSync(savePath)) return false;
+    if (UNSAFE_OPEN_EXTENSIONS.has(path.extname(savePath).toLowerCase())) {
+      shell.showItemInFolder(savePath);
+      return true;
+    }
+    // 연결된 프로그램이 없으면 오류 문자열이 온다
+    return (await shell.openPath(savePath)) === "";
+  });
+
+  ipcMain.on(IPC.downloadShow, (event, id: unknown) => {
+    const savePath = fromApp(event) && typeof id === "string" ? savedDownloads.get(id) : undefined;
+    if (savePath && fs.existsSync(savePath)) shell.showItemInFolder(savePath);
   });
 
   ipcMain.handle(IPC.getVersion, (event) => (fromApp(event) || fromSettings(event) ? app.getVersion() : ""));

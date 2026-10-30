@@ -30,6 +30,9 @@ const IPC = {
   settingsSet: "settings:set",
   settingsCheckUpdate: "settings:check-update",
   settingsInstallUpdate: "settings:install-update",
+  downloadDone: "desktop:download-done",
+  downloadOpen: "desktop:download-open",
+  downloadShow: "desktop:download-show",
 } as const;
 
 function subscribe<T>(channel: string, callback: (value: T) => void): () => void {
@@ -78,6 +81,10 @@ contextBridge.exposeInMainWorld("desktop", {
   openRoomInfoWindow: (roomId: number) => ipcRenderer.send(IPC.openRoomInfoWindow, Number(roomId)),
   openInviteWindow: (roomId: number) => ipcRenderer.send(IPC.openInviteWindow, Number(roomId)),
   appReady: () => ipcRenderer.send(IPC.appReady),
+  // 받은 파일 저장이 끝나면 알린다 (0.4.3+). id로 열기·폴더 보기를 요청한다
+  onDownloadDone: (callback: (result: unknown) => void) => subscribe(IPC.downloadDone, callback),
+  openDownload: (id: string) => ipcRenderer.invoke(IPC.downloadOpen, String(id)) as Promise<boolean>,
+  showDownloadInFolder: (id: string) => ipcRenderer.send(IPC.downloadShow, String(id)),
   openSettings: () => ipcRenderer.send(IPC.openSettings),
   windowControls: {
     minimize: () => ipcRenderer.send(IPC.windowMinimize),

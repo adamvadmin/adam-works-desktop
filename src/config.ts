@@ -78,7 +78,16 @@ export const IPC = {
   settingsSet: "settings:set",
   settingsCheckUpdate: "settings:check-update",
   settingsInstallUpdate: "settings:install-update",
+  downloadDone: "desktop:download-done",
+  downloadOpen: "desktop:download-open",
+  downloadShow: "desktop:download-show",
 } as const;
+
+/** 받은 파일 중 바로 열지 않고 폴더만 보여 주는 실행 파일 확장자 */
+export const UNSAFE_OPEN_EXTENSIONS = new Set([
+  ".exe", ".msi", ".msix", ".bat", ".cmd", ".com", ".scr", ".pif", ".cpl", ".lnk", ".url",
+  ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".jar", ".reg", ".appx",
+]);
 
 export function iconPath(name: string): string {
   // 패키징 후에도 app 경로 기준으로 build/icons에 들어 있다
