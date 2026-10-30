@@ -13,6 +13,7 @@ import {
   type BrowserWindowConstructorOptions,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
+  type NativeImage,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import { randomUUID } from "node:crypto";
@@ -601,13 +602,24 @@ function showWindow(window: BrowserWindow | null | undefined) {
 }
 
 /** 작업표시줄 오버레이(안 읽음 숫자, 10 이상은 9+)·트레이 아이콘·툴팁 */
-function setBadge(count: number) {
+type BadgeImage = { scaleFactor: number; dataURL: string };
+
+/** preload가 Windows 글꼴로 배율별로 그린 배지. 없거나 이상하면 미리 만든 그림(1~9, 9+) */
+function badgeOverlay(count: number, images: BadgeImage[]): NativeImage {
+  const image = nativeImage.createEmpty();
+  for (const { scaleFactor, dataURL } of images) {
+    if (typeof dataURL === "string" && dataURL.startsWith("data:image/png;base64,") && dataURL.length < 64_000) {
+      image.addRepresentation({ scaleFactor: Number(scaleFactor) || 1, dataURL });
+    }
+  }
+  if (!image.isEmpty()) return image;
+  return nativeImage.createFromPath(iconPath(count > 9 ? "overlay-9plus.png" : `overlay-${count}.png`));
+}
+
+function setBadge(count: number, images: BadgeImage[] = []) {
   unreadCount = count;
   if (win && !win.isDestroyed()) {
-    win.setOverlayIcon(
-      count > 0 ? nativeImage.createFromPath(iconPath(count > 9 ? "overlay-9plus.png" : `overlay-${count}.png`)) : null,
-      count > 0 ? `안 읽은 메시지 ${count}` : "",
-    );
+    win.setOverlayIcon(count > 0 ? badgeOverlay(count, images) : null, count > 0 ? `안 읽은 메시지 ${count}` : "");
   }
   refreshTray();
 }
@@ -707,8 +719,12 @@ function registerIpc() {
     notification.show();
   });
 
-  ipcMain.on(IPC.setBadge, (event, count: number) => {
-    if (fromMainWindow(event)) setBadge(count);
+  // 0.4.3+ preload는 { count, images }, 이전 형식은 숫자만
+  ipcMain.on(IPC.setBadge, (event, payload: number | { count: number; images?: BadgeImage[] }) => {
+    if (!fromMainWindow(event)) return;
+    const count = Math.max(0, Math.floor(Number(typeof payload === "number" ? payload : payload?.count) || 0));
+    const images = typeof payload === "object" && Array.isArray(payload?.images) ? payload.images.slice(0, 8) : [];
+    setBadge(count, images);
   });
 
   ipcMain.on(IPC.flashFrame, (event) => {

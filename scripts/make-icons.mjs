@@ -4,7 +4,8 @@
  * - build/icons/icon.ico      256·48·32·16px (개발 실행 바로가기 아이콘)
  * - build/icons/tray.png      32px 트레이 아이콘
  * - build/icons/tray-unread.png 32px 트레이 아이콘 + 안 읽음 점
- * - build/icons/overlay-1.png … overlay-9.png, overlay-9plus.png  32px 작업표시줄 안 읽음 숫자 (빨간 원)
+ * - build/icons/overlay-1.png … overlay-9.png, overlay-9plus.png  32px 작업표시줄 안 읽음 숫자 (짙은 남색 원).
+ *   평소에는 preload가 Windows 글꼴로 배율별 배지를 그리고, 이 그림은 그러지 못할 때만 쓴다
  * - build/installer/sidebar.bmp 164x314 설치 화면 시작·마침 페이지 왼쪽 그림
  * - build/installer/header.bmp  150x57 설치 진행 페이지 머리 그림
  *
@@ -19,7 +20,8 @@ const OUT = path.join(BUILD, "icons");
 const INSTALLER_OUT = path.join(BUILD, "installer");
 const BRAND = [0xe8, 0x26, 0x1a];
 const WHITE = [0xff, 0xff, 0xff];
-const DOT = [0xff, 0x55, 0x4f];
+/** 안 읽음 표시: 빨간 아이콘 위에서 구분되도록 짙은 남색 (#1f2937) */
+const DOT = [0x1f, 0x29, 0x37];
 const BRAND_DARK = [0xb8, 0x1c, 0x12];
 const SUPERSAMPLE = 4;
 
@@ -104,7 +106,7 @@ function tileMark(x, y) {
 
 /** 픽셀 색 결정 (위에서부터 덮어쓴다). null이면 투명 */
 function appIconColor(x, y, withDot) {
-  // 안 읽음 점: 빨간 바탕 위라 흰 테두리로 구분
+  // 안 읽음 점: 흰 테두리로 한 번 더 구분
   if (withDot && inCircle(x, y, 0.82, 0.18, 0.17)) return DOT;
   if (withDot && inCircle(x, y, 0.82, 0.18, 0.24)) return WHITE;
   const mark = tileMark(x, y);
@@ -140,7 +142,7 @@ function inText(x, y, text, unit) {
   return inner < 3 && GLYPHS[text[index]][row][inner] === "1";
 }
 
-/** 빨간 원(흰 테두리) 안에 흰 숫자 */
+/** 짙은 남색 원(흰 테두리) 안에 흰 숫자 */
 function overlayNumberColor(text) {
   const unit = text.length === 1 ? 0.12 : 0.085;
   return (x, y) => {
