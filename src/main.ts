@@ -219,6 +219,33 @@ function openExternal(url: string) {
   if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
 }
 
+/**
+ * 새 창으로 열려는 링크(채팅 본문 링크·링크 카드는 target=_blank) 처리.
+ * - 사내 앱 대화방 주소(/messenger/rooms/{id}·/chat?room={id})는 그 방 창을 연다
+ * - 그 밖의 사내 앱 주소(결재·게시판 등)는 기본 브라우저로 연다. 메신저 창은 채팅 전용 창이라
+ *   전체 앱(사이드바·메뉴)을 띄우기에 좁고 뒤로 가기도 없다. 브라우저는 따로 로그인 상태를 가진다
+ * - 사내 밖 주소는 http·https만 기본 브라우저로 연다
+ */
+function openLinkFromApp(target: string) {
+  const roomId = isAppUrl(target) ? appRoomIdOf(target) : null;
+  if (roomId != null) openRoomWindow(roomId);
+  else openExternal(target);
+}
+
+/** 사내 앱 주소가 대화방이면 방 ID, 아니면 null */
+function appRoomIdOf(url: string): number | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const fromPath = /^\/messenger\/rooms\/(\d+)\/?$/.exec(parsed.pathname)?.[1];
+  const fromQuery = /^\/chat\/?$/.test(parsed.pathname) ? parsed.searchParams.get("room") : null;
+  const id = Number(fromPath ?? fromQuery);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
 /** 메인·방·미리보기 창 (웹 화면을 띄우는 창) */
 function allWindows(): BrowserWindow[] {
   return [win, ...roomWindows.values(), viewerWindow, ...toolWindows.values()].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
@@ -261,9 +288,9 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
   };
   window.webContents.on("will-navigate", (event, target) => keepInApp(event, target));
   window.webContents.on("will-redirect", (event, target) => keepInApp(event, target));
-  // 새 창은 열지 않고, 허용 출처 밖이면 기본 브라우저로
+  // 새 창은 열지 않는다. 대화방 주소는 방 창, 나머지는 기본 브라우저로 (openLinkFromApp)
   window.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (!isAppUrl(target)) openExternal(target);
+    openLinkFromApp(target);
     return { action: "deny" };
   });
 
@@ -287,7 +314,7 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
       items.push({ role: "copy", label: "복사" });
     }
     if (params.linkURL && /^https?:/i.test(params.linkURL)) {
-      items.push({ label: "링크 열기", click: () => openExternal(params.linkURL) });
+      items.push({ label: "링크 열기", click: () => openLinkFromApp(params.linkURL) });
     }
     if (items.length > 0) Menu.buildFromTemplate(items).popup({ window });
   });
