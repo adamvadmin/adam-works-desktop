@@ -37,6 +37,9 @@ export const ZOOM_LEVELS = [0.9, 1, 1.1, 1.25];
 const DEFAULT_PREFERENCES: Preferences = { notify: true, preview: true, sound: true, zoom: 1, closeToTray: true };
 
 /** 메인 창은 목록만 보이므로 카카오톡 목록처럼 좁게 시작한다 */
+// 웹이 그리는 상단 막대 높이, 그중 이만큼은 보여야 창을 옮길 수 있다
+const TITLE_BAR_PX = 32;
+const MIN_VISIBLE_PX = 120;
 const DEFAULT_SIZE: Size = { width: 400, height: 720 };
 const DEFAULT_ROOM_SIZE: Size = { width: 440, height: 680 };
 const DEFAULT_VIEWER_SIZE: Size = { width: 900, height: 720 };
@@ -55,22 +58,29 @@ export function readSettings(): Settings {
 
 export function writeSettings(patch: Settings) {
   try {
-    fs.writeFileSync(file(), JSON.stringify({ ...readSettings(), ...patch }, null, 2));
+    // 임시 파일에 쓴 뒤 바꿔 끼운다 (쓰는 도중 꺼져도 설정 파일이 깨지지 않게)
+    const target = file();
+    const temp = `${target}.tmp`;
+    fs.writeFileSync(temp, JSON.stringify({ ...readSettings(), ...patch }, null, 2));
+    fs.renameSync(temp, target);
   } catch {
     // 설정 저장 실패는 무시 (다음 실행 때 기본값)
   }
 }
 
-/** 저장된 창 위치가 현재 모니터 안에 있으면 그대로, 아니면 기본 크기 */
+/**
+ * 저장된 창 위치의 위쪽 막대(끌어 옮기는 곳)가 지금 모니터 안에 충분히 보이면 그대로, 아니면 기본 크기
+ * (모니터를 뺀 뒤 창이 거의 안 보이는 자리에 뜨지 않게)
+ */
 export function initialBounds(): Partial<Rectangle> & Size {
   const saved = readSettings().bounds;
   if (!saved) return DEFAULT_SIZE;
-  const visible = screen.getAllDisplays().some(({ workArea }) =>
-    saved.x < workArea.x + workArea.width &&
-    saved.x + saved.width > workArea.x &&
-    saved.y < workArea.y + workArea.height &&
-    saved.y + saved.height > workArea.y,
-  );
+  const bar = { x: saved.x, y: saved.y, width: saved.width, height: TITLE_BAR_PX };
+  const visible = screen.getAllDisplays().some(({ workArea }) => {
+    const overlapX = Math.min(bar.x + bar.width, workArea.x + workArea.width) - Math.max(bar.x, workArea.x);
+    const overlapY = Math.min(bar.y + bar.height, workArea.y + workArea.height) - Math.max(bar.y, workArea.y);
+    return overlapX >= MIN_VISIBLE_PX && overlapY >= TITLE_BAR_PX / 2;
+  });
   return visible ? saved : DEFAULT_SIZE;
 }
 

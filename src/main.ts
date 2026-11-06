@@ -1,5 +1,6 @@
 import {
   app,
+  dialog,
   BrowserWindow,
   ipcMain,
   Menu,
@@ -33,7 +34,14 @@ import {
   RELOAD_RETRY_MS,
   ROOM_REVEAL_FALLBACK_MS,
   ROOM_WINDOW_CASCADE_PX,
-  UNSAFE_OPEN_EXTENSIONS,
+  SAFE_OPEN_EXTENSIONS,
+  MAX_SAVED_DOWNLOADS,
+  EMBEDDABLE_HOST_SUFFIXES,
+  LOGIN_ARGS,
+  MAX_KEPT_NOTIFICATIONS,
+  CRASH_WINDOW_MS,
+  CRASH_RELOAD_LIMIT,
+  CRASH_RELOAD_DELAY_MS,
   UPDATE_CHECK_MS,
   iconPath,
   pagePath,
@@ -93,8 +101,10 @@ let unreadCount = 0;
 let idle = false;
 /** 내려받아 둔 업데이트 버전 (다시 시작하면 적용) */
 let readyUpdateVersion: string | null = null;
-// 알림 객체는 닫힐 때까지 참조를 잡아 둔다 (GC되면 클릭 이벤트가 사라진다)
+// 알림 객체는 닫힐 때까지 참조를 잡아 둔다 (GC되면 클릭 이벤트가 사라진다). 너무 쌓이면 오래된 것부터 놓는다
 const activeNotifications = new Set<Notification>();
+// 묻지 않고 화면을 떠나게 할 창 (로그아웃으로 닫거나, 이미 나가기를 고른 이동)
+const forceUnload = new WeakSet<BrowserWindow>();
 
 // 다른 주소(로컬 개발 등)로 띄우면 설치본과 데이터·중복 실행 잠금·앱 ID를 나눈다.
 // 앱 ID가 같으면 개발 실행 때 띄운 Windows 알림을 눌렀을 때 개발용 electron.exe가 앱 없이 켜진다.
@@ -195,13 +205,19 @@ function watchDownloads() {
       }
       const id = randomUUID();
       savedDownloads.set(id, savePath);
-      const ext = path.extname(savePath).toLowerCase();
+      // 오래 켜 두어도 끝없이 쌓이지 않게 오래된 것부터 놓는다 (열기·폴더 버튼만 안 된다)
+      while (savedDownloads.size > MAX_SAVED_DOWNLOADS) {
+        const oldest = savedDownloads.keys().next().value;
+        if (oldest == null) break;
+        savedDownloads.delete(oldest);
+      }
+
       contents.send(IPC.downloadDone, {
         fileName,
         id,
         state,
         savedName: path.basename(savePath),
-        canOpen: !UNSAFE_OPEN_EXTENSIONS.has(ext),
+        canOpen: isSafeToOpen(savePath),
       });
     });
   });
@@ -217,6 +233,12 @@ function isAppUrl(url: string) {
 
 function isLocalPageUrl(url: string) {
   return url.startsWith(pagesUrlPrefix());
+}
+
+/** 받은 파일을 바로 열어도 되는지: 문서·그림·압축 등 알려진 형식만 연다 (그 밖은 폴더에서 보여 준다). 끝의 점·공백은 떼고 본다 */
+function isSafeToOpen(filePath: string): boolean {
+  const name = path.basename(filePath).replace(/[. ]+$/, "");
+  return SAFE_OPEN_EXTENSIONS.has(path.extname(name).toLowerCase());
 }
 
 function openExternal(url: string) {
@@ -256,9 +278,18 @@ function appWorkPathOf(url: string): string | null {
  * @param workPath 열 웹 경로 (/approvals/42 등)
  */
 function openWorkWindow(workPath: string) {
-  const url = APP_ORIGIN + workPath;
+  const url = new URL(workPath, APP_ORIGIN).href;
   if (workWindow && !workWindow.isDestroyed()) {
-    if (workWindow.webContents.getURL() !== url) void workWindow.loadURL(url);
+    const current = workWindow.webContents.getURL();
+    if (current !== url) {
+      showWindow(workWindow);
+      // 메일 쓰기·기안 중이면 먼저 묻는다. 나가기를 골랐으면 웹의 이탈 막기에서 다시 묻지 않는다
+      if (isComposeUrl(current)) {
+        if (!confirmLeave(workWindow)) return;
+        forceUnload.add(workWindow);
+      }
+      void workWindow.loadURL(url);
+    }
     showWindow(workWindow);
     return;
   }
@@ -298,6 +329,86 @@ function appRoomIdOf(url: string): number | null {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
+/** 알림 객체를 잡아 둔다. 눌렀거나 닫히면 놓고, 너무 많으면 오래된 것부터 놓는다 */
+function keepNotification(notification: Notification) {
+  activeNotifications.add(notification);
+  notification.once("click", () => activeNotifications.delete(notification));
+  while (activeNotifications.size > MAX_KEPT_NOTIFICATIONS) {
+    const oldest = activeNotifications.values().next().value;
+    if (!oldest) break;
+    activeNotifications.delete(oldest);
+  }
+}
+
+/**
+ * 업무 창에 열 경로를 사내 주소로 풀어 본다 (".."·인코딩으로 메신저 화면을 가리키지 않게).
+ * @return pathname+search+hash, 사내 주소가 아니거나 채팅 화면이면 null
+ */
+function workTargetOf(raw: string): string | null {
+  if (typeof raw !== "string" || !raw.startsWith("/") || raw.startsWith("//")) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw, APP_ORIGIN);
+  } catch {
+    return null;
+  }
+  if (parsed.origin !== APP_ORIGIN || /^\/(messenger|chat)(\/|$)/.test(parsed.pathname)) return null;
+  return parsed.pathname + parsed.search + parsed.hash;
+}
+
+/** 작성 화면 (떠나기 전에 묻는다. 메일 쓰기는 웹이 이탈 막기를 걸지 않아 PC 프로그램이 직접 묻는다) */
+function isComposeUrl(url: string): boolean {
+  try {
+    return /^\/(mail\/new|approvals\/new)(\/|$)/.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/** 사내 화면 안 iframe으로 띄워도 되는 바깥 주소 (Office 문서 미리보기) */
+function isEmbeddableHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return EMBEDDABLE_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+  } catch {
+    return false;
+  }
+}
+
+/** 작성 중인 화면을 떠날지 묻는다 (나가기면 true) */
+function confirmLeave(window: BrowserWindow): boolean {
+  const choice = dialog.showMessageBoxSync(window, {
+    type: "question",
+    title: APP_NAME,
+    message: "작성 중인 내용이 있습니다.",
+    detail: "나가면 저장하지 않은 내용은 사라집니다.",
+    buttons: ["나가기", "계속 쓰기"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  });
+  return choice === 0;
+}
+
+/**
+ * 로그아웃됨: 다른 창은 묻지 않고 닫고(쓰던 내용 확인 없이), 목록 창은 로그인 화면으로.
+ * @param from 로그인 화면으로 간 창
+ */
+function signedOut(from: BrowserWindow) {
+  for (const window of allWindows()) {
+    if (window === win) continue;
+    forceUnload.add(window);
+    window.close();
+  }
+  setBadge(0);
+  // 알림창에 남은 앞 사람의 알림은 눌러도 아무것도 열지 않는다
+  for (const notification of activeNotifications) notification.removeAllListeners("click");
+  activeNotifications.clear();
+  if (from !== win && win && !win.isDestroyed() && !new URL(win.webContents.getURL() || APP_URL).pathname.startsWith("/login")) {
+    void win.loadURL(APP_URL);
+  }
+}
+
 /** 메인·방·미리보기 창 (웹 화면을 띄우는 창) */
 function allWindows(): BrowserWindow[] {
   return [win, ...roomWindows.values(), viewerWindow, workWindow, ...toolWindows.values()].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
@@ -332,19 +443,34 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
     },
   });
 
-  // 허용 출처 밖으로 이동·리디렉션은 막고 기본 브라우저로 (로컬 화면은 loadFile로만 연다)
+  // 허용 출처 밖으로 이동·리디렉션은 막고 기본 브라우저로 (로컬 화면은 loadFile로만 연다). 창 자체(main frame)만 본다
   const keepInApp = (event: Electron.Event, target: string) => {
     if (isAppUrl(target)) return;
     event.preventDefault();
     openExternal(target);
   };
   window.webContents.on("will-navigate", (event, target) => keepInApp(event, target));
-  window.webContents.on("will-redirect", (event, target) => keepInApp(event, target));
-  // 업무 화면(iframe) 안에서 사내 밖 웹 주소로 가려 하면 막고 기본 브라우저로 (첨부 미리보기 blob 등은 그대로)
+  window.webContents.on("will-redirect", (event, target, _isInPlace, isMainFrame) => {
+    if (isMainFrame) keepInApp(event, target);
+  });
+  // 사내 화면에 바로 들어 있는 iframe(메일 본문·문서 칸 등)이 사내 밖 웹 주소로 가려 하면 막고 기본 브라우저로.
+  // Office 미리보기(view.officeapps.live.com)와 그 안쪽 frame, 첨부 미리보기(blob 등)는 그대로 둔다
   window.webContents.on("will-frame-navigate", (details) => {
     if (details.isMainFrame || !/^https?:/i.test(details.url) || isAppUrl(details.url)) return;
+    if (isEmbeddableHost(details.url)) return;
+    const parentUrl = details.frame?.parent?.url;
+    if (!parentUrl || !isAppUrl(parentUrl)) return;
     details.preventDefault();
     openExternal(details.url);
+  });
+  // 웹이 "작성 중 이탈 막기"를 걸면 묻는다 (Electron은 묻지 않고 막기만 한다). 종료·로그아웃 중이면 묻지 않고 나간다
+  window.webContents.on("will-prevent-unload", (event) => {
+    if (quitting || forceUnload.has(window)) {
+      forceUnload.delete(window);
+      event.preventDefault();
+      return;
+    }
+    if (confirmLeave(window)) event.preventDefault();
   });
   // 새 창은 열지 않는다. 대화방 주소는 방 창, 나머지는 기본 브라우저로 (openLinkFromApp)
   window.webContents.setWindowOpenHandler(({ url: target }) => {
@@ -352,15 +478,45 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
     return { action: "deny" };
   });
 
-  // 서버에 닿지 않으면 안내 화면을 띄우고 주기적으로 다시 시도
-  window.webContents.on("did-fail-load", (_event, errorCode, _desc, _failedUrl, isMainFrame) => {
+  // 서버에 닿지 않으면 안내 화면을 띄우고 주기적으로 다시 시도 (마지막으로 열려던 사내 화면으로, 재시도는 하나만)
+  let retryTimer: NodeJS.Timeout | null = null;
+  window.webContents.on("did-fail-load", (_event, errorCode, _desc, failedUrl, isMainFrame) => {
     if (!isMainFrame || errorCode === -3 /* ABORTED */) return;
+    const retryUrl = isAppUrl(failedUrl) ? failedUrl : url;
     void window.loadFile(pagePath("offline.html"));
     reveal(window);
-    setTimeout(() => {
-      if (!window.isDestroyed()) void window.loadURL(url);
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (!window.isDestroyed()) void window.loadURL(retryUrl);
     }, RELOAD_RETRY_MS);
   });
+
+  // 화면 프로세스가 죽으면(메모리 부족·GPU 등) 다시 띄운다. 목록 창이 죽으면 알림이 모두 멈추기 때문이다.
+  // 1분 안에 3번 넘게 죽으면 더 띄우지 않는다
+  let lastAppUrl = url;
+  window.webContents.on("did-navigate", (_event, target) => {
+    if (isAppUrl(target)) lastAppUrl = target;
+  });
+  const crashes: number[] = [];
+  window.webContents.on("render-process-gone", (_event, details) => {
+    if (details.reason === "clean-exit" || window.isDestroyed()) return;
+    const now = Date.now();
+    while (crashes.length > 0 && now - crashes[0] > CRASH_WINDOW_MS) crashes.shift();
+    crashes.push(now);
+    if (crashes.length > CRASH_RELOAD_LIMIT) return;
+    setTimeout(() => {
+      if (!window.isDestroyed()) void window.loadURL(window === win ? APP_URL : lastAppUrl);
+    }, CRASH_RELOAD_DELAY_MS);
+  });
+
+  // 어느 창이든 로그인 화면으로 가면(로그아웃·세션 만료·비밀번호 변경) 다른 창을 닫고 목록 창도 로그인 화면으로
+  const onLoginPage = (_event: unknown, target: string) => {
+    if (!isAppUrl(target) || !new URL(target).pathname.startsWith("/login")) return;
+    signedOut(window);
+  };
+  window.webContents.on("did-navigate", onLoginPage);
+  window.webContents.on("did-navigate-in-page", onLoginPage);
 
   // 텍스트 선택·입력창 우클릭 메뉴 (Electron은 기본 메뉴가 없다)
   window.webContents.on("context-menu", (_event, params) => {
@@ -480,15 +636,6 @@ function createMainWindow() {
   const main = win;
   setTimeout(() => reveal(main), MAIN_REVEAL_FALLBACK_MS);
 
-  // 목록 창이 로그인 화면으로 가면(로그아웃·세션 만료) 방·미리보기 창을 닫는다
-  const closeOthersOnLogin = (_event: unknown, url: string) => {
-    if (!isAppUrl(url) || !new URL(url).pathname.startsWith("/login")) return;
-    for (const window of allWindows()) if (window !== main) window.close();
-    setBadge(0);
-  };
-  win.webContents.on("did-navigate", closeOthersOnLogin);
-  win.webContents.on("did-navigate-in-page", closeOthersOnLogin);
-
   // 닫기 = 트레이로 숨김 (설정에서 "닫으면 종료"를 고르면 종료)
   win.on("close", (event) => {
     if (quitting) return;
@@ -517,9 +664,8 @@ function openRoomWindow(roomId: number, seq?: number) {
     if (seq != null) existing.webContents.send(IPC.jumpToMessage, seq);
     return;
   }
-  const size = roomWindowSize();
-  const position = cascadePosition();
-  const room = createAppWindow({ ...size, ...position, title: APP_NAME }, roomUrl(roomId, seq));
+  const bounds = fitToWorkArea({ ...roomWindowSize(), ...cascadePosition() });
+  const room = createAppWindow({ ...bounds, title: APP_NAME }, roomUrl(roomId, seq));
   roomWindows.set(roomId, room);
   trackRoomWindowSize(room);
   setTimeout(() => reveal(room), ROOM_REVEAL_FALLBACK_MS);
@@ -626,6 +772,20 @@ function viewerQuery(payload: unknown): URLSearchParams | null {
 }
 
 /** 마지막으로 연 방 창(없으면 메인 창) 옆으로 비켜 놓는다 */
+/** 창이 화면(작업 영역) 밖으로 나가지 않게 크기·위치를 맞춘다 (모니터 오른쪽 끝·큰 모니터에서 저장한 크기) */
+function fitToWorkArea(bounds: { width: number; height: number; x?: number; y?: number }) {
+  const anchor = bounds.x != null && bounds.y != null
+    ? screen.getDisplayMatching({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height })
+    : screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const area = anchor.workArea;
+  const width = Math.min(bounds.width, area.width);
+  const height = Math.min(bounds.height, area.height);
+  if (bounds.x == null || bounds.y == null) return { width, height };
+  const x = Math.max(area.x, Math.min(bounds.x, area.x + area.width - width));
+  const y = Math.max(area.y, Math.min(bounds.y, area.y + area.height - height));
+  return { width, height, x, y };
+}
+
 function cascadePosition(): { x?: number; y?: number } {
   const last = [...roomWindows.values()].filter((w) => !w.isDestroyed()).pop() ?? win;
   if (!last || last.isDestroyed() || !last.isVisible()) return {};
@@ -795,7 +955,7 @@ function registerIpc() {
       icon: iconPath("icon.png"),
       silent: !preferences.sound,
     });
-    activeNotifications.add(notification);
+    keepNotification(notification);
     notification.on("click", () => {
       if (Number.isFinite(payload.roomId)) openRoomWindow(payload.roomId);
       else showWindow(win);
@@ -810,18 +970,14 @@ function registerIpc() {
     if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true);
     const preferences = readPreferences();
     if (!preferences.notify || !Notification.isSupported()) return;
-    // 사내 앱 안 경로만 받는다 ("/"로 시작하고 "//"는 아님)
-    // 채팅 화면은 업무 창에 띄우지 않는다
-    const target =
-      typeof payload?.path === "string" && /^\/(?!\/)/.test(payload.path) && !/^\/(messenger|chat)(\/|\?|$)/.test(payload.path)
-        ? payload.path
-        : null;
+    // 사내 앱 안 경로만, 채팅 화면은 업무 창에 띄우지 않는다 (풀어 본 경로로 판단)
+    const target = workTargetOf(payload?.path);
     const notification = new Notification({
       ...notificationContent(payload),
       icon: iconPath("icon.png"),
       silent: !preferences.sound,
     });
-    activeNotifications.add(notification);
+    keepNotification(notification);
     notification.on("click", () => {
       // 일정·회의 등 업무 메뉴 밖 알림도 업무 창에서 연다 (웹 화면이 뒤로 가기를 그린다)
       if (target) openWorkWindow(target);
@@ -834,8 +990,9 @@ function registerIpc() {
   // 목록 창 왼쪽 업무 메뉴 → 업무 창 (0.5.0+). 업무 메뉴 경로만 받는다
   ipcMain.on(IPC.openWorkWindow, (event, workPath: string) => {
     if (!fromApp(event) || typeof workPath !== "string") return;
-    const target = appWorkPathOf(APP_ORIGIN + workPath);
-    if (target != null && /^\/(?!\/)/.test(workPath)) openWorkWindow(target);
+    const normalized = workTargetOf(workPath);
+    const target = normalized ? appWorkPathOf(APP_ORIGIN + normalized) : null;
+    if (target != null) openWorkWindow(target);
   });
 
   // 0.4.3+ preload는 { count, images }, 이전 형식은 숫자만
@@ -884,7 +1041,7 @@ function registerIpc() {
   ipcMain.handle(IPC.downloadOpen, async (event, id: unknown) => {
     const savePath = fromApp(event) && typeof id === "string" ? savedDownloads.get(id) : undefined;
     if (!savePath || !fs.existsSync(savePath)) return false;
-    if (UNSAFE_OPEN_EXTENSIONS.has(path.extname(savePath).toLowerCase())) {
+    if (!isSafeToOpen(savePath)) {
       shell.showItemInFolder(savePath);
       return true;
     }
@@ -935,7 +1092,7 @@ function registerIpc() {
     if (!fromSettings(event)) return null;
     return {
       ...readPreferences(),
-      openAtLogin: app.getLoginItemSettings().openAtLogin,
+      openAtLogin: app.getLoginItemSettings({ args: LOGIN_ARGS }).openAtLogin,
       version: app.getVersion(),
       packaged: app.isPackaged,
       readyUpdateVersion,
@@ -944,12 +1101,12 @@ function registerIpc() {
   ipcMain.handle(IPC.settingsSet, (event, patch: Record<string, unknown>) => {
     if (!fromSettings(event) || patch == null || typeof patch !== "object") return null;
     if (typeof patch.openAtLogin === "boolean") {
-      app.setLoginItemSettings({ openAtLogin: patch.openAtLogin, args: ["--hidden"] });
+      app.setLoginItemSettings({ openAtLogin: patch.openAtLogin, args: LOGIN_ARGS });
     }
     const preferences = writePreferences(patch);
     for (const window of allWindows()) window.webContents.setZoomFactor(preferences.zoom);
     refreshTray();
-    return { ...preferences, openAtLogin: app.getLoginItemSettings().openAtLogin };
+    return { ...preferences, openAtLogin: app.getLoginItemSettings({ args: LOGIN_ARGS }).openAtLogin };
   });
   ipcMain.handle(IPC.settingsCheckUpdate, async (event) => {
     if (!fromSettings(event)) return null;
@@ -990,7 +1147,7 @@ function checkForUpdates() {
       body: `새 버전 ${info.version}이 준비됐습니다. 이 알림을 누르면 다시 시작해 적용합니다.`,
       icon: iconPath("icon.png"),
     });
-    activeNotifications.add(notification);
+    keepNotification(notification);
     notification.on("click", installUpdateNow);
     notification.on("close", () => activeNotifications.delete(notification));
     notification.show();

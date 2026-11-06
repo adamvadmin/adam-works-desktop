@@ -91,11 +91,31 @@ export const WORK_PATHS = ["/attendance", "/approvals", "/mail", "/me"] as const
 /** 업무 창 처음 크기 (결재 문서·메일 본문이 보이게, 화면보다 크면 화면에 맞춘다) */
 export const WORK_MIN_SIZE = { width: 1180, height: 760 } as const;
 
-/** 받은 파일 중 바로 열지 않고 폴더만 보여 주는 실행 파일 확장자 */
-export const UNSAFE_OPEN_EXTENSIONS = new Set([
-  ".exe", ".msi", ".msix", ".bat", ".cmd", ".com", ".scr", ".pif", ".cpl", ".lnk", ".url",
-  ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".jar", ".reg", ".appx",
+/** 받은 파일 중 바로 열어도 되는 형식 (그 밖은 실행 파일일 수 있어 폴더만 보여 준다). 매크로가 든 Office 파일(docm·xlsm 등)은 빼 둔다 */
+export const SAFE_OPEN_EXTENSIONS = new Set([
+  ".pdf", ".txt", ".csv", ".log", ".md", ".rtf",
+  ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".hwp", ".hwpx", ".odt", ".ods", ".odp",
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic", ".heif",
+  ".mp3", ".m4a", ".wav", ".mp4", ".mov", ".avi", ".webm", ".mkv",
+  ".zip",
 ]);
+
+/** 저장한 파일 기억 개수 (열기·폴더 보기용) */
+export const MAX_SAVED_DOWNLOADS = 200;
+
+/** 사내 화면 iframe에 띄워도 되는 바깥 주소 (Office 문서 미리보기와 그 안쪽 frame) */
+export const EMBEDDABLE_HOST_SUFFIXES = ["officeapps.live.com", "office.net", "office.com", "microsoft.com", "live.net"] as const;
+
+/** 로그인 시 자동 실행 인자 (트레이에만 두고 창은 띄우지 않는다). 읽을 때도 같은 인자로 물어야 Windows가 같은 항목으로 본다 */
+export const LOGIN_ARGS = ["--hidden"];
+
+/** 잡아 둘 Windows 알림 수 */
+export const MAX_KEPT_NOTIFICATIONS = 50;
+
+/** 화면 프로세스가 죽으면 다시 띄우기: 1분 안에 3번까지, 1초 뒤 */
+export const CRASH_WINDOW_MS = 60_000;
+export const CRASH_RELOAD_LIMIT = 3;
+export const CRASH_RELOAD_DELAY_MS = 1_000;
 
 export function iconPath(name: string): string {
   // 패키징 후에도 app 경로 기준으로 build/icons에 들어 있다
