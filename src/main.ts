@@ -40,6 +40,8 @@ import {
   pagesUrlPrefix,
   roomUrl,
   viewerUrl,
+  WORK_MIN_SIZE,
+  WORK_PATHS,
 } from "./config";
 import {
   initialBounds,
@@ -73,6 +75,8 @@ let splash: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 /** 첨부 미리보기 창 (하나만 두고, 다른 첨부를 열면 내용을 바꾼다) */
 let viewerWindow: BrowserWindow | null = null;
+// 업무 창 (근태·결재·메일·마이페이지, 0.5.0+)
+let workWindow: BrowserWindow | null = null;
 /** 도구 창: 새 대화·방 정보·초대 (종류마다 하나, 다른 방이면 내용을 바꾼다) */
 type ToolKind = "new-room" | "room-info" | "invite";
 const toolWindows = new Map<ToolKind, BrowserWindow>();
@@ -222,14 +226,62 @@ function openExternal(url: string) {
 /**
  * 새 창으로 열려는 링크(채팅 본문 링크·링크 카드는 target=_blank) 처리.
  * - 사내 앱 대화방 주소(/messenger/rooms/{id}·/chat?room={id})는 그 방 창을 연다
- * - 그 밖의 사내 앱 주소(결재·게시판 등)는 기본 브라우저로 연다. 메신저 창은 채팅 전용 창이라
- *   전체 앱(사이드바·메뉴)을 띄우기에 좁고 뒤로 가기도 없다. 브라우저는 따로 로그인 상태를 가진다
+ * - 근태·결재·메일·마이페이지 주소는 업무 창으로 연다 (0.5.0+)
+ * - 그 밖의 사내 앱 주소(게시판 등)는 기본 브라우저로 연다. 브라우저는 따로 로그인 상태를 가진다
  * - 사내 밖 주소는 http·https만 기본 브라우저로 연다
  */
 function openLinkFromApp(target: string) {
   const roomId = isAppUrl(target) ? appRoomIdOf(target) : null;
+  const workPath = isAppUrl(target) ? appWorkPathOf(target) : null;
   if (roomId != null) openRoomWindow(roomId);
+  else if (workPath != null) openWorkWindow(workPath);
   else openExternal(target);
+}
+
+/** 사내 앱 주소가 업무 메뉴(근태·결재·메일·마이페이지) 화면이면 경로(쿼리 포함), 아니면 null */
+function appWorkPathOf(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const hit = WORK_PATHS.some((base) => parsed.pathname === base || parsed.pathname.startsWith(`${base}/`));
+  return hit ? parsed.pathname + parsed.search + parsed.hash : null;
+}
+
+/**
+ * 업무 창(근태·결재·메일·마이페이지) 열기. 하나만 두고, 이미 열려 있으면 그 화면으로 옮겨 앞으로 띄운다.
+ * 메신저 목록 창은 채팅 전용으로 작게 두고, 업무는 넓은 창에서 웹 화면을 그대로 쓴다.
+ * @param workPath 열 웹 경로 (/approvals/42 등)
+ */
+function openWorkWindow(workPath: string) {
+  const url = APP_ORIGIN + workPath;
+  if (workWindow && !workWindow.isDestroyed()) {
+    if (workWindow.webContents.getURL() !== url) void workWindow.loadURL(url);
+    showWindow(workWindow);
+    return;
+  }
+  const area = screen.getDisplayMatching(win && !win.isDestroyed() ? win.getBounds() : screen.getPrimaryDisplay().bounds).workArea;
+  const width = Math.min(WORK_MIN_SIZE.width, area.width);
+  const height = Math.min(WORK_MIN_SIZE.height, area.height);
+  const window = createAppWindow(
+    {
+      width,
+      height,
+      x: Math.round(area.x + (area.width - width) / 2),
+      y: Math.round(area.y + (area.height - height) / 2),
+      minWidth: 720,
+      minHeight: 520,
+      title: APP_NAME,
+    },
+    url,
+  );
+  workWindow = window;
+  setTimeout(() => reveal(window), ROOM_REVEAL_FALLBACK_MS);
+  window.on("closed", () => {
+    if (workWindow === window) workWindow = null;
+  });
 }
 
 /** 사내 앱 주소가 대화방이면 방 ID, 아니면 null */
@@ -248,7 +300,7 @@ function appRoomIdOf(url: string): number | null {
 
 /** 메인·방·미리보기 창 (웹 화면을 띄우는 창) */
 function allWindows(): BrowserWindow[] {
-  return [win, ...roomWindows.values(), viewerWindow, ...toolWindows.values()].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
+  return [win, ...roomWindows.values(), viewerWindow, workWindow, ...toolWindows.values()].filter((w): w is BrowserWindow => w != null && !w.isDestroyed());
 }
 
 /** 제목 표시줄 없는 창의 공통 설정. 창 테두리·그림자·Windows 11 둥근 모서리·크기 조절은 유지된다 */
@@ -288,6 +340,12 @@ function createAppWindow(options: BrowserWindowConstructorOptions, url: string):
   };
   window.webContents.on("will-navigate", (event, target) => keepInApp(event, target));
   window.webContents.on("will-redirect", (event, target) => keepInApp(event, target));
+  // 업무 화면(iframe) 안에서 사내 밖 웹 주소로 가려 하면 막고 기본 브라우저로 (첨부 미리보기 blob 등은 그대로)
+  window.webContents.on("will-frame-navigate", (details) => {
+    if (details.isMainFrame || !/^https?:/i.test(details.url) || isAppUrl(details.url)) return;
+    details.preventDefault();
+    openExternal(details.url);
+  });
   // 새 창은 열지 않는다. 대화방 주소는 방 창, 나머지는 기본 브라우저로 (openLinkFromApp)
   window.webContents.setWindowOpenHandler(({ url: target }) => {
     openLinkFromApp(target);
@@ -744,6 +802,40 @@ function registerIpc() {
     });
     notification.on("close", () => activeNotifications.delete(notification));
     notification.show();
+  });
+
+  // 결재·메일 등 알림 (0.5.0+). 누르면 업무 창에서 그 화면을 연다 (경로가 없으면 목록 창)
+  ipcMain.on(IPC.notifyLink, (event, payload: { title: string; body: string; path: string }) => {
+    if (!fromMainWindow(event)) return;
+    if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true);
+    const preferences = readPreferences();
+    if (!preferences.notify || !Notification.isSupported()) return;
+    // 사내 앱 안 경로만 받는다 ("/"로 시작하고 "//"는 아님)
+    // 채팅 화면은 업무 창에 띄우지 않는다
+    const target =
+      typeof payload?.path === "string" && /^\/(?!\/)/.test(payload.path) && !/^\/(messenger|chat)(\/|\?|$)/.test(payload.path)
+        ? payload.path
+        : null;
+    const notification = new Notification({
+      ...notificationContent(payload),
+      icon: iconPath("icon.png"),
+      silent: !preferences.sound,
+    });
+    activeNotifications.add(notification);
+    notification.on("click", () => {
+      // 일정·회의 등 업무 메뉴 밖 알림도 업무 창에서 연다 (웹 화면이 뒤로 가기를 그린다)
+      if (target) openWorkWindow(target);
+      else showWindow(win);
+    });
+    notification.on("close", () => activeNotifications.delete(notification));
+    notification.show();
+  });
+
+  // 목록 창 왼쪽 업무 메뉴 → 업무 창 (0.5.0+). 업무 메뉴 경로만 받는다
+  ipcMain.on(IPC.openWorkWindow, (event, workPath: string) => {
+    if (!fromApp(event) || typeof workPath !== "string") return;
+    const target = appWorkPathOf(APP_ORIGIN + workPath);
+    if (target != null && /^\/(?!\/)/.test(workPath)) openWorkWindow(target);
   });
 
   // 0.4.3+ preload는 { count, images }, 이전 형식은 숫자만

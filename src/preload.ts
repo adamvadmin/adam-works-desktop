@@ -33,6 +33,8 @@ const IPC = {
   downloadDone: "desktop:download-done",
   downloadOpen: "desktop:download-open",
   downloadShow: "desktop:download-show",
+  notifyLink: "desktop:notify-link",
+  openWorkWindow: "desktop:open-work-window",
 } as const;
 
 function subscribe<T>(channel: string, callback: (value: T) => void): () => void {
@@ -124,6 +126,15 @@ contextBridge.exposeInMainWorld("desktop", {
       body: String(notification.body).slice(0, 500),
       roomId: Number(notification.roomId),
     }),
+  // 결재·메일 등 알림 (0.5.0+). 누르면 업무 창에서 그 화면을 연다
+  notifyLink: (notification: { title: string; body: string; path: string }) =>
+    ipcRenderer.send(IPC.notifyLink, {
+      title: String(notification.title).slice(0, 200),
+      body: String(notification.body).slice(0, 500),
+      path: String(notification.path ?? "").slice(0, 500),
+    }),
+  // 업무 창 열기 (0.5.0+). 이미 열려 있으면 그 화면으로 옮겨 앞으로 띄운다
+  openWorkWindow: (path: string) => ipcRenderer.send(IPC.openWorkWindow, String(path ?? "").slice(0, 500)),
   setBadge: (count: number) => {
     const value = Math.max(0, Math.floor(Number(count) || 0));
     ipcRenderer.send(IPC.setBadge, { count: value, images: badgeImages(value) });

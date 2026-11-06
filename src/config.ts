@@ -81,7 +81,15 @@ export const IPC = {
   downloadDone: "desktop:download-done",
   downloadOpen: "desktop:download-open",
   downloadShow: "desktop:download-show",
+  notifyLink: "desktop:notify-link",
+  openWorkWindow: "desktop:open-work-window",
 } as const;
+
+/** 업무 창에서 여는 화면 경로 (웹 adam-works-fe/src/lib/desktop-work.ts 와 맞춘다) */
+export const WORK_PATHS = ["/attendance", "/approvals", "/mail", "/me"] as const;
+
+/** 업무 창 처음 크기 (결재 문서·메일 본문이 보이게, 화면보다 크면 화면에 맞춘다) */
+export const WORK_MIN_SIZE = { width: 1180, height: 760 } as const;
 
 /** 받은 파일 중 바로 열지 않고 폴더만 보여 주는 실행 파일 확장자 */
 export const UNSAFE_OPEN_EXTENSIONS = new Set([
