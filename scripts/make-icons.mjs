@@ -9,7 +9,7 @@
  * - build/installer/sidebar.bmp 164x314 설치 화면 시작·마침 페이지 왼쪽 그림
  * - build/installer/header.bmp  150x57 설치 진행 페이지 머리 그림
  *
- * 디자인: 살짝 둥근 브랜드 빨강(#e8261a) 정사각형, 가운데 굵은 흰 V (끝이 평평한 기하 도형)
+ * 디자인: 살짝 둥근 브랜드 빨강(#e8261a) 정사각형, 가운데 흰 로고 V (굵은 두 획이 틈을 두고 만나는 단색 V)
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -87,21 +87,19 @@ function inPolygon(x, y, points) {
   return inside;
 }
 
-/** 굵은 V (위 끝은 평평, 아래는 좁게 모인다). 가운데 정렬 */
-const V_SHAPE = [
-  [0.255, 0.28],
-  [0.39, 0.28],
-  [0.5, 0.575],
-  [0.61, 0.28],
-  [0.745, 0.28],
-  [0.567, 0.735],
-  [0.433, 0.735],
+/**
+ * 로고 V (굵은 단색 V): 굵은 두 획이 아래에서 만나고, 오른쪽 획이 왼쪽 획 위로 지나가며 가는 틈으로 구분된다.
+ * 원본은 웹 public/brand/v-works-mark.svg. 가운데 정렬, 너비 0.58
+ */
+const V_SHAPES = [
+  [[0.21, 0.2422], [0.3993, 0.7206], [0.4857, 0.4904], [0.3926, 0.2422]],
+  [[0.4141, 0.7578], [0.5859, 0.7578], [0.79, 0.2422], [0.6074, 0.2422]],
 ];
 
 /** 둥근 정사각형과 그 안의 V (0..1 좌표). "v" | "tile" | null */
 function tileMark(x, y) {
   if (!inRoundRect(x, y, 0.03, 0.03, 0.97, 0.97, 0.19)) return null;
-  return inPolygon(x, y, V_SHAPE) ? "v" : "tile";
+  return V_SHAPES.some((shape) => inPolygon(x, y, shape)) ? "v" : "tile";
 }
 
 /** 픽셀 색 결정 (위에서부터 덮어쓴다). null이면 투명 */
