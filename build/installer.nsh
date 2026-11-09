@@ -9,8 +9,8 @@
 
 ; 시작 페이지 (업데이트로 실행될 때는 건너뛴다)
 !macro customWelcomePage
-  !define MUI_WELCOMEPAGE_TITLE "V WORKS 메신저 설치"
-  !define MUI_WELCOMEPAGE_TEXT "사내 메신저 V WORKS 메신저를 이 PC에 설치합니다.$\r$\n$\r$\n설치가 끝나면 바로 실행되며, 새 버전은 자동으로 업데이트됩니다.$\r$\n$\r$\n계속하려면 [다음]을 누르세요."
+  !define MUI_WELCOMEPAGE_TITLE "V-WORKS 설치"
+  !define MUI_WELCOMEPAGE_TEXT "사내 업무 프로그램 V-WORKS(메신저·근태·결재·메일)를 이 PC에 설치합니다.$\r$\n$\r$\n설치가 끝나면 바로 실행되며, 새 버전은 자동으로 업데이트됩니다.$\r$\n$\r$\n계속하려면 [다음]을 누르세요."
   !insertmacro skipPageIfUpdated
   !insertmacro MUI_PAGE_WELCOME
 !macroend

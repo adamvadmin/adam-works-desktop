@@ -35,6 +35,8 @@ const IPC = {
   downloadShow: "desktop:download-show",
   notifyLink: "desktop:notify-link",
   openWorkWindow: "desktop:open-work-window",
+  getUpdateReady: "desktop:get-update-ready",
+  updateReady: "desktop:update-ready",
 } as const;
 
 function subscribe<T>(channel: string, callback: (value: T) => void): () => void {
@@ -135,6 +137,9 @@ contextBridge.exposeInMainWorld("desktop", {
     }),
   // 업무 창 열기 (0.5.0+). 이미 열려 있으면 그 화면으로 옮겨 앞으로 띄운다
   openWorkWindow: (path: string) => ipcRenderer.send(IPC.openWorkWindow, String(path ?? "").slice(0, 500)),
+  // 내려받아 둔 업데이트 (0.5.1+). 설정 톱니바퀴 배지용
+  getUpdateReady: () => ipcRenderer.invoke(IPC.getUpdateReady) as Promise<string | null>,
+  onUpdateReady: (callback: (version: string) => void) => subscribe<string>(IPC.updateReady, callback),
   setBadge: (count: number) => {
     const value = Math.max(0, Math.floor(Number(count) || 0));
     ipcRenderer.send(IPC.setBadge, { count: value, images: badgeImages(value) });

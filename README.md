@@ -36,6 +36,11 @@
 
 **배포 순서**: 웹(`DesktopTitleBar`)을 먼저 배포한 뒤 0.4.0 태그를 올린다. 0.4.0이 이전 웹을 띄우면 상단바가 없어 창을 옮기거나 닫을 수 없다. 반대로 0.3.x 설치본은 `windowControls`가 없어 웹이 상단바를 그리지 않으므로 그대로 쓸 수 있다.
 
+## 이름 (0.5.1+)
+
+화면에 보이는 이름은 **V-WORKS** (창 제목·트레이·알림·바로 가기·설치 화면·프로그램 추가/제거). 메신저를 넘어 근태·결재·메일까지 쓰는 프로그램이 되어 바꿨다.
+`productName`(V WORKS 메신저)·`appId`는 그대로 둔다: 바꾸면 설치 폴더·실행 파일 이름과 설정 폴더(`%APPDATA%\V WORKS 메신저`)가 바뀌어 로그인·설정이 풀린다. 바로 가기는 업데이트할 때 설치 프로그램이 예전 이름(`V WORKS 메신저.lnk`)을 새 이름으로 바꾼다.
+
 ## 업무 창 (0.5.0+)
 
 메신저 목록 창은 채팅 전용으로 작게 두고, 근태·결재·메일·마이페이지는 **업무 창** 하나에서 웹 화면을 그대로 쓴다.
@@ -81,6 +86,7 @@
 | `openViewerWindow(target)` | 첨부 미리보기 창 열기 (첨부 정보를 창 주소 쿼리로) — 0.4.0+. 없으면 웹이 대화 화면 위에 띄운다 |
 | `notifyLink({title, body, path})` | 결재·메일 등 Windows 알림. 누르면 업무 창에서 `path`를 연다 (채팅 경로는 받지 않는다) — 0.5.0+ |
 | `openWorkWindow(path)` | 업무 창 열기 (근태·결재·메일·마이페이지 경로만) — 0.5.0+ |
+| `getUpdateReady()`·`onUpdateReady(cb)` | 내려받아 둔 업데이트 버전 (없으면 null). 웹이 목록 창 설정 톱니바퀴에 "1" 배지를 붙인다 — 0.5.1+ |
 | `windowControls` | `minimize`·`toggleMaximize`·`close`·`setPinned`·`getState`·`onStateChange` (웹 상단바용) — 0.4.0+ |
 | `settings` | 설정 창 전용 (`get`·`set`·`checkUpdate`·`installUpdate`). 다른 화면에서 부르면 무시 |
 

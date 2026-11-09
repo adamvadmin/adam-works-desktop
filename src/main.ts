@@ -64,7 +64,9 @@ import {
   writeSettings,
 } from "./window-state";
 
-const APP_NAME = "V WORKS 메신저";
+// 화면에 보이는 이름 (창 제목·트레이·알림·확인 창). 설치 폴더·실행 파일·설정 폴더는 productName(V WORKS 메신저) 그대로 둔다
+// (바꾸면 설정 폴더가 바뀌어 로그인·설정이 풀린다)
+const APP_NAME = "V-WORKS";
 /**
  * 웹 화면에 허용하는 권한 (메신저 출처만). 그 외(카메라·마이크·위치·화면 공유 등)는 거부한다.
  * Electron은 따로 막지 않으면 모든 권한 요청을 묻지 않고 허용한다.
@@ -126,7 +128,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 /**
- * 기본 User-Agent에는 제품명("V WORKS 메신저")이 들어가는데,
+ * 기본 User-Agent에는 제품명(productName "V WORKS 메신저")이 들어가는데,
  * 서버(Spring Security 방화벽)가 ASCII가 아닌 헤더 값을 거부해 WebSocket 핸드셰이크가 403이 된다.
  */
 function asciiUserAgent() {
@@ -1055,6 +1057,8 @@ function registerIpc() {
   });
 
   ipcMain.handle(IPC.getVersion, (event) => (fromApp(event) || fromSettings(event) ? app.getVersion() : ""));
+  // 내려받아 둔 업데이트 버전 (없으면 null). 웹이 설정 톱니바퀴에 배지를 붙인다 (0.5.1+)
+  ipcMain.handle(IPC.getUpdateReady, (event) => (fromApp(event) ? readyUpdateVersion : null));
 
   ipcMain.on(IPC.appReady, (event) => {
     if (!fromApp(event)) return;
@@ -1142,6 +1146,10 @@ function checkForUpdates() {
   autoUpdater.on("update-downloaded", (info) => {
     readyUpdateVersion = info.version;
     refreshTray();
+    // 목록 창 설정(톱니바퀴) 배지 (0.5.1+)
+    for (const window of allWindows()) {
+      if (!window.webContents.isDestroyed()) window.webContents.send(IPC.updateReady, readyUpdateVersion);
+    }
     const notification = new Notification({
       title: `${APP_NAME} 업데이트`,
       body: `새 버전 ${info.version}이 준비됐습니다. 이 알림을 누르면 다시 시작해 적용합니다.`,

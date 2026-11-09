@@ -83,6 +83,8 @@ export const IPC = {
   downloadShow: "desktop:download-show",
   notifyLink: "desktop:notify-link",
   openWorkWindow: "desktop:open-work-window",
+  getUpdateReady: "desktop:get-update-ready",
+  updateReady: "desktop:update-ready",
 } as const;
 
 /** 업무 창에서 여는 화면 경로 (웹 adam-works-fe/src/lib/desktop-work.ts 와 맞춘다) */

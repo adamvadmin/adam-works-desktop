@@ -23,7 +23,7 @@ win:
   target:
     - nsis
   icon: build/icons/icon.png
-  artifactName: VWORKS-Messenger-Setup-${version}.${ext}
+  artifactName: VWORKS-Setup-${version}.${ext}
 # 설치 마법사: 시작(그림·안내) → 설치 → 마침(바로 실행). 설치 범위는 build/installer.nsh에서 현재 사용자로 고정
 # 자동 업데이트는 같은 설치 파일을 조용히(/S) 실행하므로 화면이 뜨지 않는다
 nsis:
@@ -37,10 +37,11 @@ nsis:
   installerSidebar: build/installer/sidebar.bmp
   uninstallerSidebar: build/installer/sidebar.bmp
   installerHeader: build/installer/header.bmp
-  uninstallDisplayName: V WORKS 메신저
+  uninstallDisplayName: V-WORKS
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: V WORKS 메신저
+  # 바로 가기 이름 (0.5.1에서 "V WORKS 메신저" → "V-WORKS". 업데이트하면 설치 프로그램이 예전 바로 가기 이름을 바꾼다)
+  shortcutName: V-WORKS
 # 저장소가 불변 릴리스(immutable releases)라 공개된 릴리스에는 파일을 올릴 수 없다.
 # 초안(draft)에 올리고 release.yml 마지막 단계에서 공개한다
 publish:
