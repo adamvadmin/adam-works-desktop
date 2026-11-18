@@ -1,7 +1,10 @@
 /* 앱 안 로컬 화면(시작·연결 대기·설정) 공통. 색은 웹(adam-works-fe custom.css)의 gw 토큰과 맞춘다 */
 :root {
-  --brand: #e8261a;
+  /* 포인트 색 (버튼·토글·로딩 등 UI) = 웹 --gw-primary */
+  --brand: #d9231a;
   --brand-soft: #fdeceb;
+  /* 로고·아이콘 전용. UI에 쓰지 않는다 */
+  --logo: #e8261a;
   --text: #0f172a;
   --muted: #64748b;
   --faint: #94a3b8;
@@ -60,12 +63,19 @@ label:has(input) input {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2em;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
+/* 로고 V (원본: adam-works-fe public/brand/v-works-mark.svg). 바닥을 WORKS 기준선에 맞춘다 */
 .brand__v {
-  color: var(--brand);
+  flex: none;
+  width: 0.81em;
+  height: 0.72em;
+  color: var(--logo);
 }
 
 .titlebar {
