@@ -87,8 +87,8 @@ export const IPC = {
   updateReady: "desktop:update-ready",
 } as const;
 
-/** 업무 창에서 여는 화면 경로 (웹 adam-works-fe/src/lib/desktop-work.ts 와 맞춘다) */
-export const WORK_PATHS = ["/attendance", "/approvals", "/mail", "/me"] as const;
+/** 업무 창에서 여는 화면 경로 (웹 adam-works-fe/src/lib/desktop-work.ts 와 맞춘다). 연차는 0.5.3+, preload.ts WORK_PATHS 와 같은 값 */
+export const WORK_PATHS = ["/attendance", "/leave", "/approvals", "/mail", "/me"] as const;
 
 /** 업무 창 처음 크기 (결재 문서·메일 본문이 보이게, 화면보다 크면 화면에 맞춘다) */
 export const WORK_MIN_SIZE = { width: 1180, height: 760 } as const;

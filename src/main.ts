@@ -85,7 +85,7 @@ let splash: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 /** 첨부 미리보기 창 (하나만 두고, 다른 첨부를 열면 내용을 바꾼다) */
 let viewerWindow: BrowserWindow | null = null;
-// 업무 창 (근태·결재·메일·마이페이지, 0.5.0+)
+// 업무 창 (근태·연차·결재·메일·마이페이지, 0.5.0+)
 let workWindow: BrowserWindow | null = null;
 /** 도구 창: 새 대화·방 정보·초대 (종류마다 하나, 다른 방이면 내용을 바꾼다) */
 type ToolKind = "new-room" | "room-info" | "invite";
@@ -250,7 +250,7 @@ function openExternal(url: string) {
 /**
  * 새 창으로 열려는 링크(채팅 본문 링크·링크 카드는 target=_blank) 처리.
  * - 사내 앱 대화방 주소(/messenger/rooms/{id}·/chat?room={id})는 그 방 창을 연다
- * - 근태·결재·메일·마이페이지 주소는 업무 창으로 연다 (0.5.0+)
+ * - 근태·연차·결재·메일·마이페이지 주소는 업무 창으로 연다 (0.5.0+)
  * - 그 밖의 사내 앱 주소(게시판 등)는 기본 브라우저로 연다. 브라우저는 따로 로그인 상태를 가진다
  * - 사내 밖 주소는 http·https만 기본 브라우저로 연다
  */
@@ -262,7 +262,7 @@ function openLinkFromApp(target: string) {
   else openExternal(target);
 }
 
-/** 사내 앱 주소가 업무 메뉴(근태·결재·메일·마이페이지) 화면이면 경로(쿼리 포함), 아니면 null */
+/** 사내 앱 주소가 업무 메뉴(근태·연차·결재·메일·마이페이지) 화면이면 경로(쿼리 포함), 아니면 null */
 function appWorkPathOf(url: string): string | null {
   let parsed: URL;
   try {
@@ -275,7 +275,7 @@ function appWorkPathOf(url: string): string | null {
 }
 
 /**
- * 업무 창(근태·결재·메일·마이페이지) 열기. 하나만 두고, 이미 열려 있으면 그 화면으로 옮겨 앞으로 띄운다.
+ * 업무 창(근태·연차·결재·메일·마이페이지) 열기. 하나만 두고, 이미 열려 있으면 그 화면으로 옮겨 앞으로 띄운다.
  * 메신저 목록 창은 채팅 전용으로 작게 두고, 업무는 넓은 창에서 웹 화면을 그대로 쓴다.
  * @param workPath 열 웹 경로 (/approvals/42 등)
  */

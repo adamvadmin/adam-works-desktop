@@ -39,6 +39,9 @@ const IPC = {
   updateReady: "desktop:update-ready",
 } as const;
 
+/** 업무 창에서 열 수 있는 화면 (config.ts WORK_PATHS 와 같은 값). 웹은 여기 있는 메뉴만 보여 준다 (0.5.3+) */
+const WORK_PATHS = Object.freeze(["/attendance", "/leave", "/approvals", "/mail", "/me"]);
+
 function subscribe<T>(channel: string, callback: (value: T) => void): () => void {
   const listener = (_event: IpcRendererEvent, value: T) => callback(value);
   ipcRenderer.on(channel, listener);
@@ -137,6 +140,8 @@ contextBridge.exposeInMainWorld("desktop", {
     }),
   // 업무 창 열기 (0.5.0+). 이미 열려 있으면 그 화면으로 옮겨 앞으로 띄운다
   openWorkWindow: (path: string) => ipcRenderer.send(IPC.openWorkWindow, String(path ?? "").slice(0, 500)),
+  // 업무 창에서 열 수 있는 화면 경로 (0.5.3+). 없으면 웹은 근태·결재·메일·마이페이지만 보여 준다
+  workPaths: WORK_PATHS,
   // 내려받아 둔 업데이트 (0.5.1+). 설정 톱니바퀴 배지용
   getUpdateReady: () => ipcRenderer.invoke(IPC.getUpdateReady) as Promise<string | null>,
   onUpdateReady: (callback: (version: string) => void) => subscribe<string>(IPC.updateReady, callback),
