@@ -41,6 +41,12 @@ export const IDLE_POLL_MS = 15_000;
 /** 화면을 못 불러왔을 때 다시 시도 간격 */
 export const RELOAD_RETRY_MS = 5_000;
 
+/** 설정 창 → 목록 창(웹) 계정 설정 요청을 기다리는 시간 */
+export const ACCOUNT_REQUEST_TIMEOUT_MS = 10_000;
+/** 설정 창이 목록 창에 맡길 수 있는 계정 설정 동작 (업무 알림 읽기·바꾸기·공용 메일함 알림) */
+export const ACCOUNT_ACTIONS = ["get", "update", "mailbox"] as const;
+export type AccountAction = (typeof ACCOUNT_ACTIONS)[number];
+
 /** 자동 업데이트 확인 간격 (새 버전을 내려받으면 다시 시작하라고 안내) */
 export const UPDATE_CHECK_MS = 60 * 60 * 1000;
 
@@ -85,6 +91,9 @@ export const IPC = {
   openWorkWindow: "desktop:open-work-window",
   getUpdateReady: "desktop:get-update-ready",
   updateReady: "desktop:update-ready",
+  settingsAccount: "settings:account",
+  accountRequest: "desktop:account-request",
+  accountResponse: "desktop:account-response",
 } as const;
 
 /** 업무 창에서 여는 화면 경로 (웹 adam-works-fe/src/lib/desktop-work.ts 와 맞춘다). 연차는 0.5.3+, preload.ts WORK_PATHS 와 같은 값 */

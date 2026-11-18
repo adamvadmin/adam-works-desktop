@@ -142,6 +142,20 @@
         background: #c41f15;
       }
 
+      .hint {
+        margin: 0 0 4px;
+        color: var(--faint);
+        font-size: 11px;
+      }
+      .row--nested {
+        min-height: 36px;
+        padding-left: 14px;
+        font-size: 13px;
+      }
+      .row--nested > span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
       .status {
         min-height: 16px;
         margin: 2px 0 0;
@@ -180,7 +194,7 @@
       <section>
         <h2>알림</h2>
         <label class="row">
-          <span>새 메시지 알림</span>
+          <span>알림 받기<small>끄면 채팅·업무 알림이 모두 뜨지 않습니다</small></span>
           <input type="checkbox" class="switch" data-key="notify" />
         </label>
         <label class="row" data-depends="notify">
@@ -191,6 +205,13 @@
           <span>알림 소리</span>
           <input type="checkbox" class="switch" data-key="sound" />
         </label>
+      </section>
+
+      <section id="account" aria-labelledby="account-title">
+        <h2 id="account-title">업무 알림</h2>
+        <p class="hint">휴대폰 앱과 같은 설정입니다. 꺼도 상단 종 알림 목록에는 그대로 쌓입니다.</p>
+        <div id="account-rows"></div>
+        <p class="status" id="account-status" role="status"></p>
       </section>
 
       <section>

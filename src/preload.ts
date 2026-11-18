@@ -37,10 +37,31 @@ const IPC = {
   openWorkWindow: "desktop:open-work-window",
   getUpdateReady: "desktop:get-update-ready",
   updateReady: "desktop:update-ready",
+  settingsAccount: "settings:account",
+  accountRequest: "desktop:account-request",
+  accountResponse: "desktop:account-response",
 } as const;
 
 /** 업무 창에서 열 수 있는 화면 (config.ts WORK_PATHS 와 같은 값). 웹은 여기 있는 메뉴만 보여 준다 (0.5.3+) */
 const WORK_PATHS = Object.freeze(["/attendance", "/leave", "/approvals", "/mail", "/me"]);
+
+/** 웹(목록 창)이 맡는 계정 설정 동작. 설정 창 요청을 메인 프로세스가 목록 창에만 보낸다 (0.5.3+) */
+type AccountProvider = Partial<Record<"get" | "update" | "mailbox", (payload: unknown) => Promise<unknown>>>;
+let accountProvider: AccountProvider | null = null;
+
+ipcRenderer.on(IPC.accountRequest, async (_event, request: { id: number; action: string; payload: unknown }) => {
+  const run = accountProvider?.[request.action as keyof AccountProvider];
+  if (typeof run !== "function") {
+    ipcRenderer.send(IPC.accountResponse, { id: request.id, ok: false, reason: "unavailable" });
+    return;
+  }
+  try {
+    const data = await run(request.payload);
+    ipcRenderer.send(IPC.accountResponse, { id: request.id, ok: true, data });
+  } catch {
+    ipcRenderer.send(IPC.accountResponse, { id: request.id, ok: false, reason: "failed" });
+  }
+});
 
 function subscribe<T>(channel: string, callback: (value: T) => void): () => void {
   const listener = (_event: IpcRendererEvent, value: T) => callback(value);
@@ -140,6 +161,13 @@ contextBridge.exposeInMainWorld("desktop", {
     }),
   // 업무 창 열기 (0.5.0+). 이미 열려 있으면 그 화면으로 옮겨 앞으로 띄운다
   openWorkWindow: (path: string) => ipcRenderer.send(IPC.openWorkWindow, String(path ?? "").slice(0, 500)),
+  // 설정 창의 업무 알림을 웹이 맡는다 (0.5.3+). 해제 함수를 돌려준다
+  provideAccountSettings: (provider: AccountProvider) => {
+    accountProvider = provider;
+    return () => {
+      if (accountProvider === provider) accountProvider = null;
+    };
+  },
   // 업무 창에서 열 수 있는 화면 경로 (0.5.3+). 없으면 웹은 근태·결재·메일·마이페이지만 보여 준다
   workPaths: WORK_PATHS,
   // 내려받아 둔 업데이트 (0.5.1+). 설정 톱니바퀴 배지용
@@ -191,5 +219,7 @@ contextBridge.exposeInMainWorld("desktop", {
     set: (patch: Record<string, unknown>) => ipcRenderer.invoke(IPC.settingsSet, patch),
     checkUpdate: () => ipcRenderer.invoke(IPC.settingsCheckUpdate),
     installUpdate: () => ipcRenderer.send(IPC.settingsInstallUpdate),
+    // 업무 알림 (목록 창 웹이 서버에 묻는다). { ok, data, reason }
+    account: (action: string, payload?: unknown) => ipcRenderer.invoke(IPC.settingsAccount, { action, payload }),
   },
 });

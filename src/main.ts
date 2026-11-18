@@ -50,6 +50,9 @@ import {
   viewerUrl,
   WORK_MIN_SIZE,
   WORK_PATHS,
+  ACCOUNT_ACTIONS,
+  ACCOUNT_REQUEST_TIMEOUT_MS,
+  type AccountAction,
 } from "./config";
 import {
   initialBounds,
@@ -936,6 +939,35 @@ function controlledWindow(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWind
   return ours && !window.isDestroyed() ? window : null;
 }
 
+type AccountResponse = { id: number; ok: boolean; data?: unknown; reason?: string };
+const accountRequests = new Map<number, (response: AccountResponse) => void>();
+let accountRequestSeq = 0;
+
+/**
+ * 계정 설정(업무 알림 등)은 서버에 있어 로그인한 목록 창(웹)에 맡긴다. 설정 창은 로컬 화면이라 로그인 정보가 없다.
+ * @param action 맡길 동작
+ * @param payload 동작 값
+ * @return 웹이 돌려준 결과. 목록 창이 없거나 로그인 전·응답 없음이면 ok=false
+ */
+function askMainWindow(action: AccountAction, payload: unknown): Promise<AccountResponse> {
+  return new Promise((resolve) => {
+    if (!win || win.isDestroyed()) {
+      resolve({ id: 0, ok: false, reason: "unavailable" });
+      return;
+    }
+    const id = ++accountRequestSeq;
+    const timer = setTimeout(() => {
+      accountRequests.delete(id);
+      resolve({ id, ok: false, reason: "timeout" });
+    }, ACCOUNT_REQUEST_TIMEOUT_MS);
+    accountRequests.set(id, (response) => {
+      clearTimeout(timer);
+      resolve(response);
+    });
+    win.webContents.send(IPC.accountRequest, { id, action, payload });
+  });
+}
+
 function notificationContent(payload: { title: string; body: string }) {
   return readPreferences().preview
     ? { title: payload.title, body: payload.body }
@@ -1111,6 +1143,20 @@ function registerIpc() {
     for (const window of allWindows()) window.webContents.setZoomFactor(preferences.zoom);
     refreshTray();
     return { ...preferences, openAtLogin: app.getLoginItemSettings({ args: LOGIN_ARGS }).openAtLogin };
+  });
+  // 업무 알림(결재·메일·그 밖의 알림, 메일 받을 주소): 서버 설정이라 목록 창(웹)에 맡긴다 (0.5.3+)
+  ipcMain.handle(IPC.settingsAccount, (event, request: { action?: unknown; payload?: unknown }) => {
+    if (!fromSettings(event) || request == null || typeof request !== "object") return null;
+    const action = request.action;
+    if (typeof action !== "string" || !(ACCOUNT_ACTIONS as readonly string[]).includes(action)) return null;
+    return askMainWindow(action as AccountAction, request.payload);
+  });
+  ipcMain.on(IPC.accountResponse, (event, response: AccountResponse) => {
+    if (!fromMainWindow(event) || response == null || typeof response.id !== "number") return;
+    const done = accountRequests.get(response.id);
+    if (!done) return;
+    accountRequests.delete(response.id);
+    done({ id: response.id, ok: response.ok === true, data: response.data, reason: typeof response.reason === "string" ? response.reason : undefined });
   });
   ipcMain.handle(IPC.settingsCheckUpdate, async (event) => {
     if (!fromSettings(event)) return null;
